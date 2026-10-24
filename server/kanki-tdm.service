@@ -1,0 +1,15 @@
+[Unit]
+Description=Kanki TDM game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=kanki
+WorkingDirectory=/opt/kanki-tdm
+Environment=HOME=/opt/kanki-tdm
+ExecStart=/opt/kanki-tdm/KankiTDM-server.x86_64 --headless -- --server --port=7777
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

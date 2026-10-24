@@ -1,0 +1,73 @@
+# Builds the game on every push:
+#   - KankiTDM-android  (APK to install on phones)
+#   - KankiTDM-windows  (EXE for PC)
+#   - KankiTDM-server   (Linux binary for the VPS)
+# Download them from the "Actions" tab -> latest run -> "Artifacts".
+name: Build game
+
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: "4.3"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    container:
+      image: barichello/godot-ci:4.3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Godot export templates
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates ~/.config
+          cp -r /root/.config/godot ~/.config/godot || true
+          cp -r /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable ~/.local/share/godot/export_templates/ || true
+
+      - name: Create Android debug keystore
+        run: |
+          keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android \
+            -keystore debug.keystore -storepass android \
+            -dname "CN=Android Debug,O=Android,C=US" -validity 9999
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$(pwd)/debug.keystore" >> $GITHUB_ENV
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey" >> $GITHUB_ENV
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android" >> $GITHUB_ENV
+
+      - name: Import project
+        run: godot --headless --editor --quit --path . || true
+
+      - name: Export Android
+        run: |
+          mkdir -p build/android
+          godot --headless --path . --export-debug "Android" build/android/KankiTDM.apk
+          test -f build/android/KankiTDM.apk
+
+      - name: Export Windows
+        run: |
+          mkdir -p build/windows
+          godot --headless --path . --export-release "Windows" build/windows/KankiTDM.exe
+          test -f build/windows/KankiTDM.exe
+
+      - name: Export Linux server
+        run: |
+          mkdir -p build/server
+          godot --headless --path . --export-release "Linux Server" build/server/KankiTDM-server.x86_64
+          cp server/kanki-tdm.service server/install-server.sh build/server/
+          test -f build/server/KankiTDM-server.x86_64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KankiTDM-android
+          path: build/android/KankiTDM.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KankiTDM-windows
+          path: build/windows/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KankiTDM-server
+          path: build/server/

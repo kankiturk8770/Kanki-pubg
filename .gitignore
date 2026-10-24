@@ -1,0 +1,13 @@
+# Godot cache and local files
+.godot/
+*.import
+export_credentials.cfg
+*.translation
+
+# Build output
+build/
+*.apk
+*.aab
+*.exe
+*.pck
+*.x86_64
