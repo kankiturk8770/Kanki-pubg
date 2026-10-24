@@ -1,6 +1,6 @@
 """Builds a game-ready character GLB from two Meshy downloads.
 
-  python3 tools/meshy/merge_animations.py rigged.glb animations.glb [more.glb ...] out.glb
+  python3 tools/meshy/merge_animations.py [--max-texture=2048] rigged.glb animations.glb [more.glb ...] out.glb
 
 - rigged.glb      Meshy Rigging result (mesh + full PBR textures, no clips)
 - animations.glb  Meshy Animation results made with several action_ids
@@ -10,8 +10,10 @@
 The output is the rigged model with the clips copied in and renamed to the
 names the game plays (see CLIP_NAMES). A still "crouch_idle" clip is made
 from the first frame of the crouch walk, because Meshy has no crouch idle.
-No libraries needed - a GLB is just JSON + one binary buffer.
+A GLB is just JSON + one binary buffer. Only --max-texture (shrinks bigger
+textures, so the model fits phone memory) needs Pillow.
 """
+import io
 import json
 import struct
 import sys
@@ -35,12 +37,68 @@ STILL_CLIPS = {"crouch_idle": "crouch_walk"}  # new clip -> made from frame 0 of
 # steady forward/sideways drift is removed so they play on the spot.
 MAKE_IN_PLACE = {"run_fast_9"}
 ROOT_BONE = "Hips"
+# Meshy's normal maps put hard creases on the face (even when weakened), and
+# the colour texture already has the cloth detail: leave them out.
+DROP_NORMAL_MAPS = True
 # The crouch walk holds the arms out wide and the jump throws them over the
 # head (both look odd without a weapon). These clips get their arm bones from
 # the first frame of ARM_SOURCE instead.
 ARMS_FROM_IDLE = {"crouch_walk", "crouch_idle", "jump"}
 ARM_SOURCE = "idle"
 ARM_BONES = {side + part for side in ("Left", "Right") for part in ("Shoulder", "Arm", "ForeArm", "Hand")}
+
+
+TINY_PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de"
+    "0000000c4944415408d763f8ffff3f0005fe02fea7d6a4c00000000049454e44ae426082")
+
+
+def drop_normal_maps(gltf, binary):
+    """Removes normal maps from the materials; their images become 1x1 pixel."""
+    dropped = {}
+    for material in gltf.get("materials", []):
+        normal = material.pop("normalTexture", None)
+        if normal is not None:
+            image = gltf["images"][gltf["textures"][normal["index"]]["source"]]
+            dropped[image["bufferView"]] = TINY_PNG
+            image["mimeType"] = "image/png"
+    return replace_buffer_views(gltf, binary, dropped)
+
+
+def replace_buffer_views(gltf, binary, new_bytes):
+    """Returns a new buffer with some buffer views' data swapped out."""
+    if not new_bytes:
+        return binary
+    rebuilt = bytearray()
+    for index, view in enumerate(gltf["bufferViews"]):
+        start = view.get("byteOffset", 0)
+        data = new_bytes.get(index, bytes(binary[start:start + view["byteLength"]]))
+        rebuilt.extend(b"\0" * (-len(rebuilt) % 4))
+        view["byteOffset"] = len(rebuilt)
+        view["byteLength"] = len(data)
+        rebuilt.extend(data)
+    return rebuilt
+
+
+def shrink_textures(gltf, binary, max_size):
+    """Returns a new buffer where every image bigger than max_size is scaled down."""
+    from PIL import Image
+    new_bytes = {}
+    for image in gltf.get("images", []):
+        view = gltf["bufferViews"][image["bufferView"]]
+        start = view.get("byteOffset", 0)
+        img = Image.open(io.BytesIO(bytes(binary[start:start + view["byteLength"]])))
+        if max(img.size) <= max_size:
+            continue
+        print("texture", img.size, "->", max_size)
+        img = img.resize((max_size, max_size * img.size[1] // img.size[0]), Image.LANCZOS)
+        out = io.BytesIO()
+        if image.get("mimeType") == "image/png":
+            img.save(out, "PNG", optimize=True)
+        else:
+            img.convert("RGB").save(out, "JPEG", quality=92)
+        new_bytes[image["bufferView"]] = out.getvalue()
+    return replace_buffer_views(gltf, binary, new_bytes)
 
 
 def read_glb(path):
@@ -156,8 +214,12 @@ def replace_arms(model, model_bin, first_frames):
                 c["sampler"] = len(anim["samplers"]) - 1
 
 
-def main(rigged_path, anims_paths, out_path):
+def main(rigged_path, anims_paths, out_path, max_texture=None):
     model, model_bin = read_glb(rigged_path)
+    if DROP_NORMAL_MAPS:
+        model_bin = drop_normal_maps(model, model_bin)
+    if max_texture:
+        model_bin = shrink_textures(model, model_bin, max_texture)
     model["animations"] = []
     first_frames = {}
     for anims_path in anims_paths:
@@ -174,6 +236,8 @@ def main(rigged_path, anims_paths, out_path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 4:
+    args = [a for a in sys.argv[1:] if not a.startswith("--max-texture=")]
+    sizes = [int(a.split("=")[1]) for a in sys.argv[1:] if a.startswith("--max-texture=")]
+    if len(args) < 3:
         sys.exit(__doc__)
-    main(sys.argv[1], sys.argv[2:-1], sys.argv[-1])
+    main(args[0], args[1:-1], args[-1], sizes[0] if sizes else None)

@@ -92,16 +92,17 @@ cartoon, anime, low poly, toy, blurry texture, extra limbs, extra fingers, defor
 📌 هر کدوم رو **جدا** بساز. اول فقط شمارهٔ ۱ رو بساز و بفرست تا کیفیتش رو تست کنیم.
 
 ### ✅ ۱. سرباز تیم آبی (پیش‌فرض) — `default_blue.glb`
-> ✅ ساخته شد با API مال Meshy (اسکلت و انیمیشن هم با خود Meshy، نه Mixamo). فرمتش GLB شد چون Godot راحت‌تر می‌خونه.
+> ✅ ساخته شد با API مال Meshy (Pro). بهترین روشی که پیدا کردیم:
+> 1. **Text to Image** با مدل `nano-banana-pro`، `pose_mode: a-pose` و `generate_multi_view: true` → سه عکس (جلو، پشت، ...)
+> 2. **Multi-Image to 3D** با عکس جلو + پشت: `ai_model: latest`، `geometry_resolution: 2k`، `texture_resolution: 4k`، `enable_pbr`، ۶۰ هزار مثلث، `a-pose`
+> 3. **Rigging** و **Animation** خود Meshy
+> 4. `python3 tools/meshy/merge_animations.py --max-texture=2048 rigged.glb anims_1.glb anims_2.glb default_blue.glb`
+>    (تکسچر 2K، normal map حذف می‌شه چون روی صورت خط و چین می‌نداخت)
 >
-> **روشی که طبیعی‌ترین نتیجه رو داد** (Text to 3D مستقیم، دست‌ها رو باز و پنجه‌ای می‌ساخت و چون اسکلت Meshy انگشت نداره، دست‌ها خشک می‌موند):
-> 1. **Text to Image** (مدل `nano-banana-2`، `pose_mode: a-pose`) با پرامپت پایین → عکس واقعی از سرباز
-> 2. **Image to 3D** از همون عکس (`enable_pbr`، ۳۰ هزار مثلث، `a-pose`)
-> 3. **Rigging** و **Animation** خود Meshy، بعد `tools/meshy/merge_animations.py`
+> نکته‌ها: دست‌ها حتماً **مشت** باشن (اسکلت Meshy انگشت نداره). **Text to 3D مستقیم** کیفیتش خیلی پایین‌تره، استفاده نکن.
 ```
-photorealistic full body photo of a male special forces soldier, 30 years old, realistic human face, natural skin, short dark military haircut, calm expression, standing straight in A-pose facing the camera, arms angled down at 45 degrees away from the body, both hands closed into relaxed fists with thumbs on the outside, palms facing the thighs, dark navy blue long sleeve combat uniform, black tactical plate carrier vest with magazine pouches, black tactical gloves, black combat boots, no weapon, no helmet, plain light grey studio background, even soft lighting, sharp focus, entire body visible from head to boots
+hyperrealistic AAA video game character reference, full body, male special forces soldier, 30 years old, highly detailed realistic human face with natural skin pores, light stubble, short military fade haircut, focused expression, standing straight in A-pose, arms 45 degrees away from the body, hands closed into relaxed fists, palms facing the thighs, dark navy blue tactical combat shirt and pants with knee pads and stitched seams, black modular plate carrier vest with three rifle magazine pouches, radio pouch and molle webbing, black tactical belt with holster, black tactical gloves, black leather combat boots, no weapon, no helmet, no text, no logo, neutral grey studio background, soft even lighting, ultra sharp 8k detail
 ```
-> برای بقیهٔ سربازها فقط قسمت لباس و صورت رو عوض کن؛ «دست‌ها مشت، کف دست رو به ران، A-pose» رو نگه دار.
 
 ### ☐ ۲. سرباز تیم قرمز (پیش‌فرض) — `default_red.fbx`
 ```
