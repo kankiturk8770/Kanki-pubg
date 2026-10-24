@@ -1,6 +1,5 @@
 # Builds the game on every push:
 #   - KankiTDM-android  (APK to install on phones)
-#   - KankiTDM-windows  (EXE for PC)
 #   - KankiTDM-server   (Linux binary for the VPS)
 # Download them from the "Actions" tab -> latest run -> "Artifacts".
 name: Build game
@@ -44,12 +43,6 @@ jobs:
           godot --headless --path . --export-debug "Android" build/android/KankiTDM.apk
           test -f build/android/KankiTDM.apk
 
-      - name: Export Windows
-        run: |
-          mkdir -p build/windows
-          godot --headless --path . --export-release "Windows" build/windows/KankiTDM.exe
-          test -f build/windows/KankiTDM.exe
-
       - name: Export Linux server
         run: |
           mkdir -p build/server
@@ -61,11 +54,6 @@ jobs:
         with:
           name: KankiTDM-android
           path: build/android/KankiTDM.apk
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: KankiTDM-windows
-          path: build/windows/
 
       - uses: actions/upload-artifact@v4
         with:
