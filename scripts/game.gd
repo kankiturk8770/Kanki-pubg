@@ -57,7 +57,7 @@ func _ready() -> void:
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 		print("[server] Kanki TDM listening on UDP port %d" % Network.port)
 		if Network.mode == Network.Mode.HOST:
-			_add_player(1, Network.player_name)
+			_add_player(1, Network.player_name, Network.character)
 	else:
 		multiplayer.connected_to_server.connect(_on_connected)
 		multiplayer.connection_failed.connect(_back_to_menu.bind(
@@ -110,25 +110,26 @@ func _back_to_menu(message: String) -> void:
 # ---------------------------------------------------------------- joining
 
 func _on_connected() -> void:
-	register_player.rpc_id(1, Network.player_name)
+	register_player.rpc_id(1, Network.player_name, Network.character)
 
 
 @rpc("any_peer", "reliable")
-func register_player(player_name: String) -> void:
+func register_player(player_name: String, character: int) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
 	if not info.has(id):
-		_add_player(id, player_name)
+		_add_player(id, player_name, character)
 
 
-func _add_player(id: int, player_name: String) -> void:
+func _add_player(id: int, player_name: String, character: int) -> void:
 	player_name = player_name.strip_edges().left(16)
 	if player_name == "":
 		player_name = "Player%d" % (info.size() + 1)
 	var team := 0 if _team_size(0) <= _team_size(1) else 1
 	info[id] = {"name": player_name, "team": team, "kills": 0, "deaths": 0}
-	spawner.spawn({"id": id, "name": player_name, "team": team, "pos": get_spawn_point(team)})
+	spawner.spawn({"id": id, "name": player_name, "team": team, "character": character,
+			"pos": get_spawn_point(team)})
 	print("[server] %s joined team %s (%d players)" % [player_name, ["BLUE", "RED"][team], info.size()])
 	_broadcast_info()
 	_broadcast_match()

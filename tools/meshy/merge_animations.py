@@ -50,7 +50,7 @@ ARM_BONES = {side + part for side in ("Left", "Right") for part in ("Shoulder", 
 
 TINY_PNG = bytes.fromhex(
     "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de"
-    "0000000c4944415408d763f8ffff3f0005fe02fea7d6a4c00000000049454e44ae426082")
+    "0000000c49444154789c636868f80f000383020000a5fb890000000049454e44ae426082")
 
 
 def drop_normal_maps(gltf, binary):

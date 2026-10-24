@@ -13,6 +13,7 @@ var mode := Mode.NONE
 var address := "127.0.0.1"
 var port := DEFAULT_PORT
 var player_name := "Player"
+var character := 0  # scripts/characters.gd: MALE / FEMALE
 
 ## Shown in the main menu after we get kicked back there.
 var last_error := ""

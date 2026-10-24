@@ -85,13 +85,17 @@ cartoon, anime, low poly, toy, blurry texture, extra limbs, extra fingers, defor
 
 ---
 
-## مرحلهٔ ۱ — سربازها (۶ تا)
+## مرحلهٔ ۱ — کاراکترها
 
-📁 **آپلود در:** `assets/characters/skins/`
-📌 **مهم:** سرباز **نباید اسلحه دستش باشه**. اسلحه رو جدا می‌ذاریم. حتماً **T-pose** باشه (دست‌ها صاف به دو طرف).
-📌 هر کدوم رو **جدا** بساز. اول فقط شمارهٔ ۱ رو بساز و بفرست تا کیفیتش رو تست کنیم.
+📁 **فایل‌ها:** `assets/characters/skins/` (مدل‌ها) و `assets/characters/team_colors/` (لباس قرمز)
+📌 هر بازیکن توی لابی **مرد** یا **زن** رو انتخاب می‌کنه. تیم فقط **رنگ لباس** رو عوض می‌کنه: تیم آبی لباس سرمه‌ای، تیم قرمز لباس قرمز.
+📌 مدل‌ها با لباس **سرمه‌ای** ساخته می‌شن. نسخهٔ قرمز رو این دستور از روی همون مدل می‌سازه (اعتبار Meshy نمی‌خواد):
+```
+python3 tools/meshy/make_team_texture.py assets/characters/skins/male.glb assets/characters/team_colors/male_red.jpg
+```
+📌 سرباز **نباید اسلحه دستش باشه**. اسلحه رو جدا می‌ذاریم.
 
-### ✅ ۱. سرباز تیم آبی (پیش‌فرض) — `default_blue.glb`
+### ✅ ۱. کاراکتر مرد — `male.glb`
 > ✅ ساخته شد با API مال Meshy (Pro). بهترین روشی که پیدا کردیم:
 > 1. **Text to Image** با مدل `nano-banana-pro`، `pose_mode: a-pose` و `generate_multi_view: true` → سه عکس (جلو، پشت، ...)
 > 2. **Multi-Image to 3D** با عکس جلو + پشت: `ai_model: latest`، `geometry_resolution: 2k`، `texture_resolution: 4k`، `enable_pbr`، ۶۰ هزار مثلث، `a-pose`
@@ -104,10 +108,14 @@ cartoon, anime, low poly, toy, blurry texture, extra limbs, extra fingers, defor
 hyperrealistic AAA video game character reference, full body, male special forces soldier, 30 years old, highly detailed realistic human face with natural skin pores, light stubble, short military fade haircut, focused expression, standing straight in A-pose, arms 45 degrees away from the body, hands closed into relaxed fists, palms facing the thighs, dark navy blue tactical combat shirt and pants with knee pads and stitched seams, black modular plate carrier vest with three rifle magazine pouches, radio pouch and molle webbing, black tactical belt with holster, black tactical gloves, black leather combat boots, no weapon, no helmet, no text, no logo, neutral grey studio background, soft even lighting, ultra sharp 8k detail
 ```
 
-### ☐ ۲. سرباز تیم قرمز (پیش‌فرض) — `default_red.fbx`
+### ✅ ۲. کاراکتر زن — `female.glb`
+> ✅ دقیقاً با همون روش مرد ساخته شد (انیمیشن‌ها هم همونه). عکس جلوی multi-view چند تا عکس کوچیک گوشه‌اش داشت که قبل از Multi-Image to 3D پاکشون کردیم؛ جلو + بغل + پشت فرستاده شد. قد: ۱.۷ متر.
 ```
-realistic mercenary soldier, full body, standing in T-pose, arms straight out to the sides, dark red combat jacket, brown tactical chest rig with pouches, red bandana covering the face, black baseball cap, tactical gloves, brown combat boots, no weapon, empty hands, game character, highly detailed, PBR
+hyperrealistic AAA video game character reference, full body, female special forces soldier, 28 years old, athletic build, highly detailed realistic human face with natural skin pores, natural makeup-free look, dark brown hair tied back in a low bun, focused expression, standing straight in A-pose, arms 45 degrees away from the body, hands closed into relaxed fists, palms facing the thighs, dark navy blue tactical combat shirt and pants with knee pads and stitched seams, black modular plate carrier vest with three rifle magazine pouches, radio pouch and molle webbing, black tactical belt with holster, black tactical gloves, black leather combat boots, no weapon, no helmet, no text, no logo, neutral grey studio background, soft even lighting, ultra sharp 8k detail
 ```
+
+### لباس‌های اضافه (بعداً، اختیاری)
+> این‌ها برای فروشگاه لباس بعدیه. اگه ساختیم، برای **هر دو** کاراکتر (مرد و زن) با روش بالا ساخته می‌شن.
 
 ### ☐ ۳. لباس «سایه» — `skin_shadow.fbx`
 ```

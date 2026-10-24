@@ -22,6 +22,7 @@ enum Quality { LOW, MEDIUM, HIGH }
 const FPS_OPTIONS := [30, 60, 90, 120]
 
 var player_name := "Player"
+var character := 0  # scripts/characters.gd: MALE / FEMALE
 var server_ip := "127.0.0.1"
 var server_port := 7777
 
@@ -54,6 +55,7 @@ func load_settings() -> void:
 	if cfg.load(PATH) != OK:
 		return
 	player_name = cfg.get_value("player", "name", player_name)
+	character = cfg.get_value("player", "character", character)
 	server_ip = cfg.get_value("network", "ip", server_ip)
 	server_port = cfg.get_value("network", "port", server_port)
 	drag_sensitivity.merge(cfg.get_value("controls", "drag_sensitivity", {}), true)
@@ -73,6 +75,7 @@ func load_settings() -> void:
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("player", "name", player_name)
+	cfg.set_value("player", "character", character)
 	cfg.set_value("network", "ip", server_ip)
 	cfg.set_value("network", "port", server_port)
 	cfg.set_value("controls", "drag_sensitivity", drag_sensitivity)

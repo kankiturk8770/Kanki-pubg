@@ -10,14 +10,7 @@ extends CharacterBody3D
 const UI := preload("res://scripts/ui/ui_theme.gd")
 const Fx := preload("res://scripts/fx.gd")
 const AimModifier := preload("res://scripts/aim_modifier.gd")
-const ArmRelax := preload("res://scripts/arm_relax.gd")
-const SOLDIER_SCENE := preload("res://assets/characters/soldier.glb")
-# Skin of each team (index = team). Teams without a Meshy skin yet use the
-# old Blender soldier. See docs/ASSETS.md, step 1.
-const TEAM_SKINS := [
-	preload("res://assets/characters/skins/default_blue.glb"),
-	SOLDIER_SCENE,
-]
+const Characters := preload("res://scripts/characters.gd")
 const LOOPING_ANIMS := ["idle", "run", "crouch_idle", "crouch_walk", "jump"]
 
 const WALK_SPEED := 5.0     # normal run (joystick fully pushed)
@@ -51,6 +44,7 @@ const FACE_CAMERA_AFTER_FIRE := 0.8
 var peer_id := 0
 var player_name := ""
 var team := 0
+var character := Characters.MALE
 var is_local := false
 var game: Node3D
 
@@ -95,7 +89,7 @@ var shape: CollisionShape3D
 var model: Node3D
 var anim: AnimationPlayer
 var aim_mod: SkeletonModifier3D
-var arm_relax: SkeletonModifier3D   # only on Meshy skins
+var arm_relax: SkeletonModifier3D
 var muzzle: Node3D
 var flash: MeshInstance3D
 var name_tag: Label3D
@@ -112,6 +106,7 @@ func setup(data: Dictionary, local_id: int, game_ref: Node3D) -> void:
 	name = str(peer_id)
 	player_name = data["name"]
 	team = data["team"]
+	character = data.get("character", Characters.MALE)
 	is_local = peer_id == local_id
 	position = data["pos"]
 	rotation.y = _spawn_yaw()
@@ -149,9 +144,9 @@ func _build_body() -> void:
 
 	var team_color: Color = UI.TEAM_COLORS[team]
 
-	# The soldier model (Meshy skin, or tools/blender/make_soldier.py).
+	# The character the player picked, in the team's uniform.
 	# It faces +Z, the game uses -Z as forward, so turn it around.
-	model = TEAM_SKINS[team].instantiate()
+	model = Characters.make(character, team)
 	model.rotation.y = PI
 	add_child(model)
 	anim = model.find_child("AnimationPlayer", true, false)
@@ -161,33 +156,17 @@ func _build_body() -> void:
 	anim.play("idle")
 
 	var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
-	if skeleton.find_bone("LeftForeArm") >= 0:
-		arm_relax = ArmRelax.new()
-		skeleton.add_child(arm_relax)
+	arm_relax = Characters.arm_relax(model)
 	aim_mod = AimModifier.new()
 	skeleton.add_child(aim_mod)
-	if skeleton.find_bone("muzzle") >= 0:
-		muzzle = BoneAttachment3D.new()
-		muzzle.bone_name = "muzzle"
-		skeleton.add_child(muzzle)
-	else:
-		# Meshy skins have no rifle (and no muzzle bone) yet: shoot from
-		# just in front of the right hand until weapons are attached.
-		var hand := BoneAttachment3D.new()
-		hand.bone_name = "RightHand"
-		skeleton.add_child(hand)
-		muzzle = Node3D.new()
-		hand.add_child(muzzle)
-		muzzle.position = Vector3(0, 0.1, 0)
-
-	# Team colour on the vest
-	for mi in model.find_children("*", "MeshInstance3D", true, false):
-		for i in mi.mesh.get_surface_count():
-			var mat := mi.mesh.surface_get_material(i) as StandardMaterial3D
-			if mat and mat.resource_name == "Vest":
-				var tinted := mat.duplicate() as StandardMaterial3D
-				tinted.albedo_color = mat.albedo_color.lerp(team_color, 0.5)
-				mi.set_surface_override_material(i, tinted)
+	# No rifle yet: shoot from just in front of the right hand until
+	# weapons are attached.
+	var hand := BoneAttachment3D.new()
+	hand.bone_name = "RightHand"
+	skeleton.add_child(hand)
+	muzzle = Node3D.new()
+	hand.add_child(muzzle)
+	muzzle.position = Vector3(0, 0.1, 0)
 
 	flash = MeshInstance3D.new()
 	var flash_mesh := SphereMesh.new()

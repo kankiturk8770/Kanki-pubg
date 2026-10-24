@@ -7,20 +7,22 @@ extends Control
 ##   --port=7777         server port
 ##   --join=1.2.3.4      join a server straight away (used for testing)
 ##   --name=Ali          player name for --join
+##   --character=1       character for --join (0 male, 1 female)
 
 const UI := preload("res://scripts/ui/ui_theme.gd")
 const TouchControls := preload("res://scripts/hud/touch_controls.gd")
 const LayoutEditor := preload("res://scripts/hud/layout_editor.gd")
 const SettingsPanel := preload("res://scripts/ui/settings_panel.gd")
-const ArmRelax := preload("res://scripts/arm_relax.gd")
+const Characters := preload("res://scripts/characters.gd")
 const GAME_SCENE := "res://scenes/game.tscn"
-const SOLDIER_SCENE := preload("res://assets/characters/skins/default_blue.glb")
 const START_YELLOW := Color("f6c21c")
 
 var name_edit: LineEdit
 var ip_edit: LineEdit
 var status_label: Label
 var _soldier: Node3D
+var _stage: Node3D
+var _character_buttons: Array[Button] = []
 
 
 func _ready() -> void:
@@ -34,6 +36,7 @@ func _ready() -> void:
 		Network.mode = Network.Mode.CLIENT
 		Network.address = opts["join"]
 		Network.player_name = opts.get("name", "Tester")
+		Network.character = int(opts.get("character", "0"))
 		_go_to_game()
 		return
 	if opts.has("server") or DisplayServer.get_name() == "headless":
@@ -136,22 +139,36 @@ func _build_stage() -> void:
 	disc.position.y = 0.06
 	stage.add_child(disc)
 
-	_soldier = SOLDIER_SCENE.instantiate()
-	_soldier.position.y = 0.12
-	_soldier.rotation.y = deg_to_rad(-20)
-	stage.add_child(_soldier)
-	var skeleton: Skeleton3D = _soldier.find_child("Skeleton3D", true, false)
-	if skeleton.find_bone("LeftForeArm") >= 0:
-		skeleton.add_child(ArmRelax.new())
-	var ap: AnimationPlayer = _soldier.find_child("AnimationPlayer", true, false)
-	var idle := "lobby_idle" if ap.has_animation("lobby_idle") else "idle"
-	ap.get_animation(idle).loop_mode = Animation.LOOP_LINEAR
-	ap.play(idle)
+	_stage = stage
+	_show_character()
 
 	var cam := Camera3D.new()
 	cam.fov = 40
 	stage.add_child(cam)
 	cam.look_at_from_position(Vector3(0.35, 1.25, 4.3), Vector3(0.35, 1.0, 0))
+
+
+## Puts the character picked in the profile on the stage (blue uniform).
+func _show_character() -> void:
+	var yaw := deg_to_rad(-20)
+	if _soldier:
+		yaw = _soldier.rotation.y
+		_soldier.queue_free()
+	_soldier = Characters.make(Settings.character, 0)
+	_soldier.position.y = 0.12
+	_soldier.rotation.y = yaw
+	_stage.add_child(_soldier)
+	var ap: AnimationPlayer = _soldier.find_child("AnimationPlayer", true, false)
+	ap.get_animation("lobby_idle").loop_mode = Animation.LOOP_LINEAR
+	ap.play("lobby_idle")
+
+
+func _pick_character(character: int) -> void:
+	Settings.character = character
+	Settings.save_settings()
+	for i in _character_buttons.size():
+		_character_buttons[i].button_pressed = i == character
+	_show_character()
 
 
 func _stage_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color, glow := false) -> void:
@@ -173,7 +190,7 @@ func _stage_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color, glow 
 
 func _build_profile() -> void:
 	var panel := PanelContainer.new()
-	_anchor(panel, 0, 0, Rect2(16, 16, 340, 100))
+	_anchor(panel, 0, 0, Rect2(16, 16, 340, 150))
 	add_child(panel)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
@@ -201,6 +218,17 @@ func _build_profile() -> void:
 	name_edit.text_changed.connect(func(t): initial.text = t.left(1).to_upper())
 	col.add_child(name_edit)
 	col.add_child(UI.label("Tap the name to change it", 14, Color(1, 1, 1, 0.6)))
+
+	# Character: everyone plays the one they pick here (team only changes the uniform colour)
+	var pick := HBoxContainer.new()
+	col.add_child(pick)
+	for i in Characters.NAMES.size():
+		var b := UI.button(Characters.NAMES[i], _pick_character.bind(i), 40)
+		b.toggle_mode = true
+		b.button_pressed = i == Settings.character
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		pick.add_child(b)
+		_character_buttons.append(b)
 
 
 func _build_start_area() -> void:
@@ -287,6 +315,7 @@ func _on_join() -> void:
 	Network.mode = Network.Mode.CLIENT
 	Network.address = Settings.server_ip
 	Network.player_name = Settings.player_name
+	Network.character = Settings.character
 	_go_to_game()
 
 
@@ -294,6 +323,7 @@ func _on_host() -> void:
 	_save_fields()
 	Network.mode = Network.Mode.HOST
 	Network.player_name = Settings.player_name
+	Network.character = Settings.character
 	_go_to_game()
 
 
