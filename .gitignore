@@ -20,3 +20,9 @@ assets/characters/skins/*.jpg
 
 # Python cache
 __pycache__/
+
+# Textures Godot extracts from imported weapon/prop models
+assets/weapons/*.png
+assets/weapons/*.jpg
+assets/props/*.png
+assets/props/*.jpg

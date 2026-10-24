@@ -19,8 +19,9 @@ const TEAM_TEXTURES := [
 ]
 
 
-## Makes the character's model in its team's uniform, with the arm fix added.
-static func make(character: int, team: int) -> Node3D:
+## Makes the character's model in its team's uniform. Unarmed characters get
+## the arm fix (armed ones get scripts/weapon_pose.gd from the caller).
+static func make(character: int, team: int, armed := false) -> Node3D:
 	character = clampi(character, 0, SCENES.size() - 1)
 	var model := (SCENES[character] as PackedScene).instantiate() as Node3D
 	var texture: Texture2D = TEAM_TEXTURES[character][team]
@@ -32,15 +33,8 @@ static func make(character: int, team: int) -> Node3D:
 					mat = mat.duplicate()
 					mat.albedo_texture = texture
 					mi.set_surface_override_material(i, mat)
-	var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
-	skeleton.add_child(ArmRelax.new())
+	if not armed:
+		var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
+		skeleton.add_child(ArmRelax.new())
 	return model
 
-
-## The arm fix of a model made by make().
-static func arm_relax(model: Node3D) -> SkeletonModifier3D:
-	var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
-	for child in skeleton.get_children():
-		if child.get_script() == ArmRelax:
-			return child
-	return null

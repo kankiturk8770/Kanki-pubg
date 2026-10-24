@@ -11,6 +11,9 @@ const UI := preload("res://scripts/ui/ui_theme.gd")
 const Fx := preload("res://scripts/fx.gd")
 const AimModifier := preload("res://scripts/aim_modifier.gd")
 const Characters := preload("res://scripts/characters.gd")
+const Weapons := preload("res://scripts/weapons.gd")
+const WeaponPose := preload("res://scripts/weapon_pose.gd")
+const WeaponHolder := preload("res://scripts/weapon_holder.gd")
 const LOOPING_ANIMS := ["idle", "run", "crouch_idle", "crouch_walk", "jump"]
 
 const WALK_SPEED := 5.0     # normal run (joystick fully pushed)
@@ -25,9 +28,6 @@ const STAND_HEIGHT := 1.8
 const CROUCH_HEIGHT := 1.35
 
 const MAX_HEALTH := 100
-const BODY_DAMAGE := 22
-const HEAD_DAMAGE := 48
-const FIRE_INTERVAL := 0.09   # ~660 rounds per minute
 const MAG_SIZE := 30
 const RELOAD_TIME := 2.1
 const RANGE := 150.0
@@ -45,6 +45,8 @@ var peer_id := 0
 var player_name := ""
 var team := 0
 var character := Characters.MALE
+var weapon := "m416"
+var weapon_info: Dictionary   # scripts/weapons.gd: damage, fire rate...
 var is_local := false
 var game: Node3D
 
@@ -89,7 +91,7 @@ var shape: CollisionShape3D
 var model: Node3D
 var anim: AnimationPlayer
 var aim_mod: SkeletonModifier3D
-var arm_relax: SkeletonModifier3D
+var weapon_pose: SkeletonModifier3D
 var muzzle: Node3D
 var flash: MeshInstance3D
 var name_tag: Label3D
@@ -107,6 +109,8 @@ func setup(data: Dictionary, local_id: int, game_ref: Node3D) -> void:
 	player_name = data["name"]
 	team = data["team"]
 	character = data.get("character", Characters.MALE)
+	weapon = data.get("weapon", "m416")
+	weapon_info = Weapons.get_info(weapon)
 	is_local = peer_id == local_id
 	position = data["pos"]
 	rotation.y = _spawn_yaw()
@@ -146,7 +150,7 @@ func _build_body() -> void:
 
 	# The character the player picked, in the team's uniform.
 	# It faces +Z, the game uses -Z as forward, so turn it around.
-	model = Characters.make(character, team)
+	model = Characters.make(character, team, true)
 	model.rotation.y = PI
 	add_child(model)
 	anim = model.find_child("AnimationPlayer", true, false)
@@ -156,17 +160,15 @@ func _build_body() -> void:
 	anim.play("idle")
 
 	var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
-	arm_relax = Characters.arm_relax(model)
+	# Rifle pose first, then the aim pitch / peek lean on top of it
+	weapon_pose = WeaponPose.new()
+	skeleton.add_child(weapon_pose)
+	weapon_pose.setup(anim)
 	aim_mod = AimModifier.new()
 	skeleton.add_child(aim_mod)
-	# No rifle yet: shoot from just in front of the right hand until
-	# weapons are attached.
-	var hand := BoneAttachment3D.new()
-	hand.bone_name = "RightHand"
-	skeleton.add_child(hand)
-	muzzle = Node3D.new()
-	hand.add_child(muzzle)
-	muzzle.position = Vector3(0, 0.1, 0)
+	var holder := WeaponHolder.new()
+	holder.setup(skeleton, weapon)
+	muzzle = holder.muzzle
 
 	flash = MeshInstance3D.new()
 	var flash_mesh := SphereMesh.new()
@@ -420,9 +422,11 @@ func _animate(delta: float) -> void:
 	if anim.current_animation != want:
 		anim.play(want, 0.2)
 	anim.speed_scale = rate
-	if arm_relax:
-		var relax := 1.0 if want in ["idle", "crouch_idle"] else 0.0
-		arm_relax.influence = lerpf(arm_relax.influence, relax, 1.0 - exp(-10.0 * delta))
+	# Rifle: on the shoulder when aiming or just fired, low ready otherwise;
+	# the death clip moves the arms itself
+	var raise := 1.0 if aiming or _since_fire < FACE_CAMERA_AFTER_FIRE else 0.0
+	weapon_pose.aim = lerpf(weapon_pose.aim, raise, 1.0 - exp(-14.0 * delta))
+	weapon_pose.influence = lerpf(weapon_pose.influence, 0.0 if dead else 1.0, 1.0 - exp(-8.0 * delta))
 
 
 # ---------------------------------------------------------------- actions
@@ -506,7 +510,7 @@ func current_spread() -> float:
 
 
 func _shoot() -> void:
-	_fire_cooldown = FIRE_INTERVAL
+	_fire_cooldown = weapon_info["fire_interval"]
 	_since_fire = 0.0
 	ammo -= 1
 	var origin := camera.global_position
@@ -581,7 +585,7 @@ func server_fire(origin: Vector3, dir: Vector3) -> void:
 	if dead or not game.is_playing():
 		return
 	var now := Time.get_ticks_msec() / 1000.0
-	if now - _server_last_fire < FIRE_INTERVAL * 0.7:
+	if now - _server_last_fire < weapon_info["fire_interval"] * 0.7:
 		return
 	_server_last_fire = now
 
@@ -598,7 +602,7 @@ func server_fire(origin: Vector3, dir: Vector3) -> void:
 		var target = hit.collider
 		if target.has_method("server_take_damage") and target.team != team and not target.dead:
 			var head_hit: bool = end.y > target.global_position.y + target.capsule.height - 0.35
-			target.server_take_damage(HEAD_DAMAGE if head_hit else BODY_DAMAGE, peer_id, head_hit)
+			target.server_take_damage(weapon_info["head_damage"] if head_hit else weapon_info["body_damage"], peer_id, head_hit)
 			hit_confirm.rpc_id(peer_id, head_hit)
 	fx_shot.rpc(end)
 

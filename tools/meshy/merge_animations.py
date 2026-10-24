@@ -31,6 +31,10 @@ CLIP_NAMES = {
     "Hit_Reaction": "hit",
     "dying_backwards": "death",
     "victory": "lobby_pose",
+    # Rifle poses: scripts/weapon_pose.gd takes the arms from these
+    "Combat_Idle_Turn_Left": "rifle_idle",
+    "Walk_Forward_While_Shooting": "rifle_aim",
+    "Walk_Backward_with_Gun_1": "rifle_back",
 }
 STILL_CLIPS = {"crouch_idle": "crouch_walk"}  # new clip -> made from frame 0 of
 # Clips that walk forward (no "_inplace" version in the library): the hips'

@@ -8,6 +8,7 @@ extends Control
 ##   --join=1.2.3.4      join a server straight away (used for testing)
 ##   --name=Ali          player name for --join
 ##   --character=1       character for --join (0 male, 1 female)
+##   --weapon=akm        weapon for --join (m416, akm, ump45)
 
 const UI := preload("res://scripts/ui/ui_theme.gd")
 const TouchControls := preload("res://scripts/hud/touch_controls.gd")
@@ -37,6 +38,7 @@ func _ready() -> void:
 		Network.address = opts["join"]
 		Network.player_name = opts.get("name", "Tester")
 		Network.character = int(opts.get("character", "0"))
+		Network.weapon = opts.get("weapon", "m416")
 		_go_to_game()
 		return
 	if opts.has("server") or DisplayServer.get_name() == "headless":
@@ -316,6 +318,7 @@ func _on_join() -> void:
 	Network.address = Settings.server_ip
 	Network.player_name = Settings.player_name
 	Network.character = Settings.character
+	Network.weapon = Settings.weapon
 	_go_to_game()
 
 
@@ -324,6 +327,7 @@ func _on_host() -> void:
 	Network.mode = Network.Mode.HOST
 	Network.player_name = Settings.player_name
 	Network.character = Settings.character
+	Network.weapon = Settings.weapon
 	_go_to_game()
 
 

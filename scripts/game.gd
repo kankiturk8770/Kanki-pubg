@@ -4,6 +4,7 @@ extends Node3D
 
 const MapBuilder := preload("res://scripts/map_builder.gd")
 const PlayerScript := preload("res://scripts/player.gd")
+const Weapons := preload("res://scripts/weapons.gd")
 const HudScript := preload("res://scripts/hud/hud.gd")
 const MENU_SCENE := "res://scenes/main_menu.tscn"
 
@@ -57,7 +58,7 @@ func _ready() -> void:
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 		print("[server] Kanki TDM listening on UDP port %d" % Network.port)
 		if Network.mode == Network.Mode.HOST:
-			_add_player(1, Network.player_name, Network.character)
+			_add_player(1, Network.player_name, Network.character, Network.weapon)
 	else:
 		multiplayer.connected_to_server.connect(_on_connected)
 		multiplayer.connection_failed.connect(_back_to_menu.bind(
@@ -110,26 +111,28 @@ func _back_to_menu(message: String) -> void:
 # ---------------------------------------------------------------- joining
 
 func _on_connected() -> void:
-	register_player.rpc_id(1, Network.player_name, Network.character)
+	register_player.rpc_id(1, Network.player_name, Network.character, Network.weapon)
 
 
 @rpc("any_peer", "reliable")
-func register_player(player_name: String, character: int) -> void:
+func register_player(player_name: String, character: int, weapon: String) -> void:
 	if not multiplayer.is_server():
 		return
 	var id := multiplayer.get_remote_sender_id()
 	if not info.has(id):
-		_add_player(id, player_name, character)
+		_add_player(id, player_name, character, weapon)
 
 
-func _add_player(id: int, player_name: String, character: int) -> void:
+func _add_player(id: int, player_name: String, character: int, weapon: String) -> void:
+	if not Weapons.LIST.has(weapon):
+		weapon = "m416"
 	player_name = player_name.strip_edges().left(16)
 	if player_name == "":
 		player_name = "Player%d" % (info.size() + 1)
 	var team := 0 if _team_size(0) <= _team_size(1) else 1
 	info[id] = {"name": player_name, "team": team, "kills": 0, "deaths": 0}
 	spawner.spawn({"id": id, "name": player_name, "team": team, "character": character,
-			"pos": get_spawn_point(team)})
+			"weapon": weapon, "pos": get_spawn_point(team)})
 	print("[server] %s joined team %s (%d players)" % [player_name, ["BLUE", "RED"][team], info.size()])
 	_broadcast_info()
 	_broadcast_match()
