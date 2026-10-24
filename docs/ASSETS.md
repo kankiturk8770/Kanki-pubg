@@ -93,10 +93,15 @@ cartoon, anime, low poly, toy, blurry texture, extra limbs, extra fingers, defor
 
 ### ✅ ۱. سرباز تیم آبی (پیش‌فرض) — `default_blue.glb`
 > ✅ ساخته شد با API مال Meshy (اسکلت و انیمیشن هم با خود Meshy، نه Mixamo). فرمتش GLB شد چون Godot راحت‌تر می‌خونه.
-> نسخهٔ اول (با ماسک صورت) کارتونی شد. این پرامپت طبیعی‌تر درومد: **صورت پیدا باشه، ماسک نداشته باشه، A-pose باشه**.
+>
+> **روشی که طبیعی‌ترین نتیجه رو داد** (Text to 3D مستقیم، دست‌ها رو باز و پنجه‌ای می‌ساخت و چون اسکلت Meshy انگشت نداره، دست‌ها خشک می‌موند):
+> 1. **Text to Image** (مدل `nano-banana-2`، `pose_mode: a-pose`) با پرامپت پایین → عکس واقعی از سرباز
+> 2. **Image to 3D** از همون عکس (`enable_pbr`، ۳۰ هزار مثلث، `a-pose`)
+> 3. **Rigging** و **Animation** خود Meshy، بعد `tools/meshy/merge_animations.py`
 ```
-photorealistic male military operator, 30 years old, full body, realistic adult human proportions, standing straight in A-pose, arms relaxed out to the sides, clean shaven realistic human face, natural tanned skin, calm expression, no mask, black ballistic helmet with headset, dark navy blue combat uniform, black tactical plate carrier vest with pouches, tactical gloves, black combat boots, no weapon, empty hands, lifelike 3D scan, real person, highly detailed, PBR
+photorealistic full body photo of a male special forces soldier, 30 years old, realistic human face, natural skin, short dark military haircut, calm expression, standing straight in A-pose facing the camera, arms angled down at 45 degrees away from the body, both hands closed into relaxed fists with thumbs on the outside, palms facing the thighs, dark navy blue long sleeve combat uniform, black tactical plate carrier vest with magazine pouches, black tactical gloves, black combat boots, no weapon, no helmet, plain light grey studio background, even soft lighting, sharp focus, entire body visible from head to boots
 ```
+> برای بقیهٔ سربازها فقط قسمت لباس و صورت رو عوض کن؛ «دست‌ها مشت، کف دست رو به ران، A-pose» رو نگه دار.
 
 ### ☐ ۲. سرباز تیم قرمز (پیش‌فرض) — `default_red.fbx`
 ```

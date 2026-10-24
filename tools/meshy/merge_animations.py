@@ -20,7 +20,7 @@ import sys
 CLIP_NAMES = {
     "Idle_9": "idle",
     "Idle_3": "lobby_idle",
-    "Rifle_Charge_inplace": "run",
+    "run_fast_9": "run",
     "Lean_Forward_Sprint_inplace": "sprint",
     "Walk_Backward_inplace": "walk_back",
     "Cautious_Crouch_Walk_Forward_inplace": "crouch_walk",
@@ -31,6 +31,16 @@ CLIP_NAMES = {
     "victory": "lobby_pose",
 }
 STILL_CLIPS = {"crouch_idle": "crouch_walk"}  # new clip -> made from frame 0 of
+# Clips that walk forward (no "_inplace" version in the library): the hips'
+# steady forward/sideways drift is removed so they play on the spot.
+MAKE_IN_PLACE = {"run_fast_9"}
+ROOT_BONE = "Hips"
+# The crouch walk holds the arms out wide and the jump throws them over the
+# head (both look odd without a weapon). These clips get their arm bones from
+# the first frame of ARM_SOURCE instead.
+ARMS_FROM_IDLE = {"crouch_walk", "crouch_idle", "jump"}
+ARM_SOURCE = "idle"
+ARM_BONES = {side + part for side in ("Left", "Right") for part in ("Shoulder", "Arm", "ForeArm", "Hand")}
 
 
 def read_glb(path):
@@ -72,12 +82,34 @@ def add_accessor(gltf, binary, acc, raw):
     return len(gltf["accessors"]) - 1
 
 
+def _is_root_translation(gltf, anim, sampler):
+    index = anim["samplers"].index(sampler)
+    return any(c["sampler"] == index and c["target"]["path"] == "translation"
+               and gltf["nodes"][c["target"]["node"]].get("name") == ROOT_BONE
+               for c in anim["channels"])
+
+
+def remove_drift(times_raw, values_raw):
+    """Takes the straight line from the first to the last key off X and Z
+    (keeps the up/down bounce on Y), so the clip loops on the spot."""
+    times = struct.unpack("<%df" % (len(times_raw) // 4), times_raw)
+    v = list(struct.unpack("<%df" % (len(values_raw) // 4), values_raw))
+    span = (times[-1] - times[0]) or 1.0
+    for axis in (0, 2):
+        first, last = v[axis], v[-3 + axis]
+        for i, t in enumerate(times):
+            v[i * 3 + axis] -= (last - first) * (t - times[0]) / span
+    return struct.pack("<%df" % len(v), *v)
+
+
 def copy_clips(model, model_bin, anims_path, first_frames):
     clips, clips_bin = read_glb(anims_path)
     if [n.get("name") for n in model["nodes"]] != [n.get("name") for n in clips["nodes"]]:
         sys.exit(anims_path + " has a different skeleton - was it made from the same rig task?")
     for anim in clips["animations"]:
-        name = CLIP_NAMES.get(anim["name"])
+        # A request with a single action names its clip "Armature|<action>|baselayer"
+        action = anim["name"].split("|")[1] if "|" in anim["name"] else anim["name"]
+        name = CLIP_NAMES.get(action)
         if name is None:
             print("skipped clip", anim["name"])
             continue
@@ -86,6 +118,9 @@ def copy_clips(model, model_bin, anims_path, first_frames):
         for s in anim["samplers"]:
             in_acc, in_raw, _ = accessor_bytes(clips, clips_bin, s["input"])
             out_acc, out_raw, width = accessor_bytes(clips, clips_bin, s["output"])
+            if action in MAKE_IN_PLACE and _is_root_translation(clips, anim, s):
+                out_raw = remove_drift(in_raw, out_raw)
+                out_acc = {k: v for k, v in out_acc.items() if k not in ("min", "max")}
             samplers.append({
                 "input": add_accessor(model, model_bin, in_acc, in_raw),
                 "output": add_accessor(model, model_bin, out_acc, out_raw),
@@ -94,6 +129,31 @@ def copy_clips(model, model_bin, anims_path, first_frames):
             still.append((out_acc, out_raw[:width]))
         model["animations"].append({"name": name, "channels": anim["channels"], "samplers": samplers})
         first_frames[name] = (anim["channels"], still)
+
+
+def still_sampler(model, model_bin, out_acc, value):
+    """A two-key sampler (t=0 and t=1) that holds one value."""
+    time_acc = {"componentType": 5126, "count": 2, "type": "SCALAR", "min": [0.0], "max": [1.0]}
+    acc = {k: v for k, v in out_acc.items() if k not in ("min", "max")}
+    acc["count"] = 2
+    return {"input": add_accessor(model, model_bin, time_acc, struct.pack("<ff", 0.0, 1.0)),
+            "output": add_accessor(model, model_bin, acc, value * 2), "interpolation": "LINEAR"}
+
+
+def replace_arms(model, model_bin, first_frames):
+    channels, still = first_frames[ARM_SOURCE]
+    held = {}  # (node, path) -> (accessor, first value)
+    for c in channels:
+        if model["nodes"][c["target"]["node"]].get("name") in ARM_BONES:
+            held[(c["target"]["node"], c["target"]["path"])] = still[c["sampler"]]
+    for anim in model["animations"]:
+        if anim["name"] not in ARMS_FROM_IDLE:
+            continue
+        for c in anim["channels"]:
+            key = (c["target"]["node"], c["target"]["path"])
+            if key in held:
+                anim["samplers"].append(still_sampler(model, model_bin, *held[key]))
+                c["sampler"] = len(anim["samplers"]) - 1
 
 
 def main(rigged_path, anims_paths, out_path):
@@ -105,17 +165,10 @@ def main(rigged_path, anims_paths, out_path):
 
     for name, source in STILL_CLIPS.items():
         channels, still = first_frames[source]
-        times = struct.pack("<ff", 0.0, 1.0)
-        time_acc = {"componentType": 5126, "count": 2, "type": "SCALAR", "min": [0.0], "max": [1.0]}
-        time_index = add_accessor(model, model_bin, time_acc, times)
-        samplers = []
-        for out_acc, value in still:
-            acc = {k: v for k, v in out_acc.items() if k not in ("min", "max")}
-            acc["count"] = 2
-            samplers.append({"input": time_index, "output": add_accessor(model, model_bin, acc, value * 2),
-                             "interpolation": "LINEAR"})
+        samplers = [still_sampler(model, model_bin, acc, value) for acc, value in still]
         model["animations"].append({"name": name, "channels": channels, "samplers": samplers})
 
+    replace_arms(model, model_bin, first_frames)
     write_glb(out_path, model, model_bin)
     print("wrote", out_path, "clips:", [a["name"] for a in model["animations"]])
 

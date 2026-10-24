@@ -1,11 +1,11 @@
 extends SkeletonModifier3D
 ## Meshy skins: the auto-rig keeps the arms a little away from the body and
-## the palms turned forward in every clip. This brings the upper arms closer
-## to the body and turns the palms towards the legs, after the animation plays.
+## the elbows locked straight in the idle clips. This brings the upper arms
+## closer to the body and bends the elbows a little, after the animation plays.
 ## Only meant for standing still: player.gd fades `influence` out otherwise.
 
-const ARM_DOWN := deg_to_rad(7.0)
-const PALM_IN := deg_to_rad(55.0)
+const ARM_DOWN := deg_to_rad(8.0)
+const ELBOW_BEND := deg_to_rad(12.0)
 
 var _sides: Array = []  # [upper arm bone, forearm bone, side sign]
 
@@ -27,9 +27,8 @@ func _process_modification() -> void:
 		var sign: float = side[2]
 		# Upper arm: turn around the model's front/back axis, towards the body.
 		_turn(skeleton, side[0], Vector3.BACK, -ARM_DOWN * sign)
-		# Forearm: twist around its own length, palm towards the leg.
-		var fore_global := skeleton.get_bone_global_pose(side[1]).basis
-		_turn(skeleton, side[1], fore_global.y.normalized(), PALM_IN * sign)
+		# Forearm: bend the elbow so the hand comes a little forward.
+		_turn(skeleton, side[1], Vector3.RIGHT, -ELBOW_BEND)
 
 
 ## Rotates a bone by `angle` around `axis` given in skeleton space.
