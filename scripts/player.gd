@@ -9,6 +9,9 @@ extends CharacterBody3D
 
 const UI := preload("res://scripts/ui/ui_theme.gd")
 const Fx := preload("res://scripts/fx.gd")
+const AimModifier := preload("res://scripts/aim_modifier.gd")
+const SOLDIER_SCENE := preload("res://assets/characters/soldier.glb")
+const LOOPING_ANIMS := ["idle", "run", "crouch_idle", "crouch_walk", "jump"]
 
 const WALK_SPEED := 5.0
 const ADS_SPEED := 3.2
@@ -16,7 +19,7 @@ const CROUCH_SPEED := 2.4
 const JUMP_VELOCITY := 4.6
 const ACCEL := 40.0
 const STAND_HEIGHT := 1.8
-const CROUCH_HEIGHT := 1.2
+const CROUCH_HEIGHT := 1.35
 
 const MAX_HEALTH := 100
 const BODY_DAMAGE := 22
@@ -61,17 +64,14 @@ var _bot_sidestep := 0.0
 var _bot_side := 1.0
 
 var _server_last_fire := 0.0
-var _anim_time := 0.0
 var _last_pos := Vector3.ZERO
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 
 var capsule: CapsuleShape3D
 var shape: CollisionShape3D
 var model: Node3D
-var upper: Node3D
-var aim_pivot: Node3D
-var head: Node3D
-var legs: Array[Node3D] = []
+var anim: AnimationPlayer
+var aim_mod: SkeletonModifier3D
 var muzzle: Node3D
 var flash: MeshInstance3D
 var name_tag: Label3D
@@ -122,41 +122,33 @@ func _build_body() -> void:
 	add_child(shape)
 
 	var team_color: Color = UI.TEAM_COLORS[team]
-	var vest := team_color.darkened(0.25)
-	var pants := Color(0.22, 0.24, 0.2)
-	var skin := Color(0.85, 0.66, 0.5)
-	var dark := Color(0.12, 0.12, 0.12)
 
-	model = Node3D.new()
+	# The soldier model (made with tools/blender/make_soldier.py).
+	# It faces +Z, the game uses -Z as forward, so turn it around.
+	model = SOLDIER_SCENE.instantiate()
+	model.rotation.y = PI
 	add_child(model)
-	for side in [-1, 1]:
-		var leg := Node3D.new()
-		leg.position = Vector3(side * 0.13, 0.9, 0)
-		_part(leg, Vector3(0.2, 0.9, 0.22), Vector3(0, -0.45, 0), pants)
-		_part(leg, Vector3(0.22, 0.12, 0.3), Vector3(0, -0.86, -0.04), dark)
-		model.add_child(leg)
-		legs.append(leg)
+	anim = model.find_child("AnimationPlayer", true, false)
+	for anim_name in LOOPING_ANIMS:
+		if anim.has_animation(anim_name):
+			anim.get_animation(anim_name).loop_mode = Animation.LOOP_LINEAR
+	anim.play("idle")
 
-	upper = Node3D.new()
-	model.add_child(upper)
-	_part(upper, Vector3(0.52, 0.62, 0.3), Vector3(0, 1.22, 0), vest)
-	_part(upper, Vector3(0.4, 0.45, 0.2), Vector3(0, 1.25, 0.24), pants.lightened(0.1))
-	head = Node3D.new()
-	head.position = Vector3(0, 1.55, 0)
-	upper.add_child(head)
-	_part(head, Vector3(0.26, 0.28, 0.26), Vector3(0, 0.12, 0), skin, true)
-	_part(head, Vector3(0.32, 0.18, 0.32), Vector3(0, 0.22, 0.01), team_color.darkened(0.5), true)
+	var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
+	aim_mod = AimModifier.new()
+	skeleton.add_child(aim_mod)
+	muzzle = BoneAttachment3D.new()
+	muzzle.bone_name = "muzzle"
+	skeleton.add_child(muzzle)
 
-	aim_pivot = Node3D.new()
-	aim_pivot.position = Vector3(0, 1.4, 0)
-	upper.add_child(aim_pivot)
-	_part(aim_pivot, Vector3(0.11, 0.11, 0.5), Vector3(0.22, -0.06, -0.2), vest)
-	_part(aim_pivot, Vector3(0.11, 0.11, 0.55), Vector3(-0.08, -0.1, -0.3), vest)
-	_part(aim_pivot, Vector3(0.07, 0.13, 0.8), Vector3(0.16, -0.06, -0.45), dark)
-	_part(aim_pivot, Vector3(0.05, 0.2, 0.08), Vector3(0.16, -0.2, -0.38), dark)
-	muzzle = Node3D.new()
-	muzzle.position = Vector3(0.16, -0.04, -0.88)
-	aim_pivot.add_child(muzzle)
+	# Team colour on the vest
+	for mi in model.find_children("*", "MeshInstance3D", true, false):
+		for i in mi.mesh.get_surface_count():
+			var mat := mi.mesh.surface_get_material(i) as StandardMaterial3D
+			if mat and mat.resource_name == "Vest":
+				var tinted := mat.duplicate() as StandardMaterial3D
+				tinted.albedo_color = mat.albedo_color.lerp(team_color, 0.5)
+				mi.set_surface_override_material(i, tinted)
 
 	flash = MeshInstance3D.new()
 	var flash_mesh := SphereMesh.new()
@@ -188,26 +180,6 @@ func _build_body() -> void:
 	shot_audio.unit_size = 8.0
 	shot_audio.max_polyphony = 4
 	muzzle.add_child(shot_audio)
-
-
-func _part(parent: Node3D, size: Vector3, pos: Vector3, color: Color, round := false) -> void:
-	var mi := MeshInstance3D.new()
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = 0.8
-	if round:
-		var sphere := SphereMesh.new()
-		sphere.radius = size.x / 2
-		sphere.height = size.y
-		sphere.material = mat
-		mi.mesh = sphere
-	else:
-		var box := BoxMesh.new()
-		box.size = size
-		box.material = mat
-		mi.mesh = box
-	mi.position = pos
-	parent.add_child(mi)
 
 
 func _build_sync() -> void:
@@ -345,16 +317,28 @@ func _remote_update(delta: float) -> void:
 
 func _animate(delta: float) -> void:
 	var moved := global_position - _last_pos
-	moved.y = 0
 	_last_pos = global_position
+	var vertical := moved.y / maxf(delta, 0.001)
+	moved.y = 0
 	var speed := moved.length() / maxf(delta, 0.001)
-	_anim_time += delta * speed * 2.2
-	var swing := sin(_anim_time) * 0.6 * clampf(speed / WALK_SPEED, 0, 1)
-	var base := 1.2 if crouching else 0.0
-	legs[0].rotation.x = base + swing
-	legs[1].rotation.x = base - swing
-	aim_pivot.rotation.x = pitch
-	head.rotation.x = pitch * 0.5
+	aim_mod.pitch = 0.0 if dead else pitch
+
+	var in_air := not is_on_floor() if is_local else absf(vertical) > 1.5
+	var want := "idle"
+	var rate := 1.0
+	if dead:
+		want = "death"
+	elif in_air:
+		want = "jump"
+	elif crouching:
+		want = "crouch_walk" if speed > 0.4 else "crouch_idle"
+		rate = clampf(speed / CROUCH_SPEED, 0.6, 1.5) if speed > 0.4 else 1.0
+	elif speed > 0.4:
+		want = "run"
+		rate = clampf(speed / WALK_SPEED * 1.3, 0.6, 1.4)
+	if anim.current_animation != want:
+		anim.play(want, 0.15)
+	anim.speed_scale = rate
 
 
 # ---------------------------------------------------------------- actions
@@ -404,7 +388,6 @@ func set_crouch(value: bool) -> void:
 func _apply_crouch() -> void:
 	capsule.height = CROUCH_HEIGHT if crouching else STAND_HEIGHT
 	shape.position.y = capsule.height / 2
-	upper.position.y = -0.55 if crouching else 0.0
 
 
 func start_reload() -> void:
@@ -582,9 +565,6 @@ func set_dead() -> void:
 	shape.set_deferred("disabled", true)
 	name_tag.visible = false
 	aiming = false
-	var tween := model.create_tween()
-	tween.tween_property(model, "rotation:x", -PI / 2, 0.35)
-	tween.parallel().tween_property(model, "position:y", 0.2, 0.35)
 	if is_local and game.hud:
 		game.hud.on_local_death(game.RESPAWN_DELAY)
 
@@ -596,8 +576,7 @@ func do_respawn(pos: Vector3, yaw: float) -> void:
 	dead = false
 	health = MAX_HEALTH
 	shape.set_deferred("disabled", false)
-	model.rotation.x = 0
-	model.position.y = 0
+	anim.play("idle")
 	global_position = pos
 	net_position = pos
 	_last_pos = pos
