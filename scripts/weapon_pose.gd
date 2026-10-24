@@ -1,56 +1,51 @@
 extends SkeletonModifier3D
-## Holds the rifle: after the body animation (idle, run, crouch...) plays,
-## the upper body (spine, head, arms) is set to the shooting pose taken from
-## the "rifle_aim" clip. When not aiming the arms are lowered (low ready);
-## `aim` (0..1) raises the rifle to the shoulder.
-## Turn it off (influence 0) when a clip should move the arms itself (death).
+## Upper-body layer: after the body animation plays, the spine, arms, hands,
+## fingers (and head) can take their pose from another clip instead, e.g.
+## the legs run while the upper body reloads or aims. The player sets
+## `clip` + `time` every frame; `influence` blends it in or out.
+##
+## Mixamo skeleton (tools/mixamo): bone names without the "mixamorig:" prefix.
 
-const UPPER_BODY := ["Spine", "Spine01", "Spine02", "neck", "Head",
-		"LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
-		"RightShoulder", "RightArm", "RightForeArm", "RightHand"]
-const POSE_CLIP := "rifle_aim"
-const POSE_TIME := 1.5
-const LOWER := deg_to_rad(28.0)  # how far the arms drop when not aiming
+const ROOT_BONE := "Spine"  # this bone and everything under it
 
-var aim := 0.0
-## true = neck and head keep the body animation (they look ahead instead of
-## down the gun); set before setup()
-var head_from_animation := false
+var clip: Animation
+var time := 0.0
 var _bones: Array[int] = []
-var _pose: Array[Quaternion] = []
-var _arms: Array[int] = []
+var _tracks: Array[int] = []   # rotation track of each bone in `clip`, -1 = none
+var _for_clip: Animation
 
 
 ## Call after adding it as a child of the Skeleton3D.
-func setup(anim: AnimationPlayer) -> void:
+func setup() -> void:
 	var skeleton := get_parent() as Skeleton3D
-	for bone_name in UPPER_BODY:
-		if head_from_animation and bone_name in ["neck", "Head"]:
-			continue
-		_bones.append(skeleton.find_bone(bone_name))
-	_arms = [skeleton.find_bone("LeftArm"), skeleton.find_bone("RightArm")]
-	var clip := anim.get_animation(POSE_CLIP)
-	for bone in _bones:
-		_pose.append(skeleton.get_bone_pose_rotation(bone) if bone >= 0 else Quaternion())
+	var root := skeleton.find_bone(ROOT_BONE)
+	for bone in skeleton.get_bone_count():
+		var b := bone
+		while b >= 0 and b != root:
+			b = skeleton.get_bone_parent(b)
+		if b == root:
+			_bones.append(bone)
+
+
+func _map_tracks() -> void:
+	var skeleton := get_skeleton()
+	_tracks.clear()
+	var by_bone := {}
 	for track in clip.get_track_count():
-		if clip.track_get_type(track) != Animation.TYPE_ROTATION_3D:
-			continue
-		var i := _bones.find(skeleton.find_bone(clip.track_get_path(track).get_concatenated_subnames()))
-		if i >= 0:
-			_pose[i] = clip.rotation_track_interpolate(track, POSE_TIME)
+		if clip.track_get_type(track) == Animation.TYPE_ROTATION_3D:
+			by_bone[skeleton.find_bone(clip.track_get_path(track).get_concatenated_subnames())] = track
+	for bone in _bones:
+		_tracks.append(by_bone.get(bone, -1))
+	_for_clip = clip
 
 
 func _process_modification() -> void:
 	var skeleton := get_skeleton()
-	if skeleton == null or _pose.is_empty():
+	if skeleton == null or clip == null:
 		return
+	if clip != _for_clip:
+		_map_tracks()
+	var t := fposmod(time, clip.length) if clip.loop_mode != Animation.LOOP_NONE else clampf(time, 0, clip.length)
 	for i in _bones.size():
-		if _bones[i] >= 0:
-			skeleton.set_bone_pose_rotation(_bones[i], _pose[i])
-	# Low ready: turn both upper arms down around the body's left-right axis
-	var lower := LOWER * (1.0 - aim)
-	if lower > 0.001:
-		for bone in _arms:
-			var to_bone := skeleton.get_bone_global_pose(bone).basis.orthonormalized().inverse()
-			var axis := (to_bone * Vector3.RIGHT).normalized()
-			skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_pose_rotation(bone) * Quaternion(axis, lower))
+		if _tracks[i] >= 0:
+			skeleton.set_bone_pose_rotation(_bones[i], clip.rotation_track_interpolate(_tracks[i], t))

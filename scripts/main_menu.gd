@@ -18,7 +18,6 @@ const LayoutEditor := preload("res://scripts/hud/layout_editor.gd")
 const SettingsPanel := preload("res://scripts/ui/settings_panel.gd")
 const Characters := preload("res://scripts/characters.gd")
 const Weapons := preload("res://scripts/weapons.gd")
-const WeaponPose := preload("res://scripts/weapon_pose.gd")
 const WeaponHolder := preload("res://scripts/weapon_holder.gd")
 const BG := preload("res://assets/ui/lobby_bg.jpg")
 const PORTRAITS := [preload("res://assets/ui/portrait_male.png"), preload("res://assets/ui/portrait_female.png")]
@@ -186,14 +185,9 @@ func _show_character() -> void:
 	_soldier.rotation.y = yaw
 	_stage.add_child(_soldier)
 	var ap: AnimationPlayer = _soldier.find_child("AnimationPlayer", true, false)
-	ap.get_animation("lobby_idle").loop_mode = Animation.LOOP_LINEAR
-	ap.play("lobby_idle")
 	var skeleton: Skeleton3D = _soldier.find_child("Skeleton3D", true, false)
-	var pose := WeaponPose.new()
-	pose.head_from_animation = true  # look ahead, not down at the gun
-	skeleton.add_child(pose)
-	pose.setup(ap)
-	WeaponHolder.new().setup(skeleton, Settings.weapon)
+	WeaponHolder.new().setup(skeleton, Settings.weapon, ap)
+	ap.play("idle")
 	if _avatar:
 		_avatar.texture = PORTRAITS[clampi(Settings.character, 0, 1)]
 

@@ -14,7 +14,11 @@ const Characters := preload("res://scripts/characters.gd")
 const Weapons := preload("res://scripts/weapons.gd")
 const WeaponPose := preload("res://scripts/weapon_pose.gd")
 const WeaponHolder := preload("res://scripts/weapon_holder.gd")
-const LOOPING_ANIMS := ["idle", "run", "crouch_idle", "crouch_walk", "jump"]
+const LOOPING_ANIMS := ["idle", "run", "crouch_idle", "crouch_walk", "jump", "walk_back",
+		"strafe_left", "strafe_right", "rifle_low", "rifle_aim"]
+## Body clips whose arms don't hold the rifle: the upper body comes from
+## "rifle_low" instead (scripts/weapon_pose.gd)
+const UNARMED_CLIPS := ["run", "jump"]
 
 const WALK_SPEED := 5.0     # normal run (joystick fully pushed)
 const SPRINT_SPEED := 6.4
@@ -160,14 +164,15 @@ func _build_body() -> void:
 	anim.play("idle")
 
 	var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
-	# Rifle pose first, then the aim pitch / peek lean on top of it
+	# Upper-body layer first, then the aim pitch / peek lean on top of it
 	weapon_pose = WeaponPose.new()
 	skeleton.add_child(weapon_pose)
-	weapon_pose.setup(anim)
+	weapon_pose.setup()
+	weapon_pose.influence = 0.0
 	aim_mod = AimModifier.new()
 	skeleton.add_child(aim_mod)
 	var holder := WeaponHolder.new()
-	holder.setup(skeleton, weapon)
+	holder.setup(skeleton, weapon, anim)
 	muzzle = holder.muzzle
 
 	flash = MeshInstance3D.new()
@@ -404,9 +409,12 @@ func _animate(delta: float) -> void:
 	var in_air := not is_on_floor() if is_local else absf(vertical) > 1.5
 	var want := "idle"
 	var rate := 1.0
-	# Walking backwards (relative to the body) plays the cycle in reverse
+	# Movement direction relative to the body: forward, backward or sideways
 	var forward := Vector3(sin(body_yaw + PI), 0, cos(body_yaw + PI))
-	var backwards := speed > 0.4 and moved.normalized().dot(forward) < -0.3
+	var right := Vector3(-forward.z, 0, forward.x)
+	var dir := moved.normalized()
+	var ahead := dir.dot(forward)
+	var side := dir.dot(right)
 	if dead:
 		want = "death"
 	elif in_air:
@@ -414,19 +422,42 @@ func _animate(delta: float) -> void:
 	elif crouching:
 		want = "crouch_walk" if speed > 0.4 else "crouch_idle"
 		rate = clampf(speed / CROUCH_SPEED, 0.6, 1.5) if speed > 0.4 else 1.0
+		if speed > 0.4 and ahead < -0.3:
+			rate = -rate
 	elif speed > 0.4:
-		want = "run"
-		rate = clampf(speed / WALK_SPEED * 1.3, 0.5, 1.8)
-	if backwards and want in ["run", "crouch_walk"]:
-		rate = -rate
+		if ahead > 0.5:
+			want = "run"
+			rate = clampf(speed / 4.7, 0.5, 1.6)   # Run_Forward covers 4.7 m/s
+		elif ahead < -0.5:
+			want = "walk_back"
+			rate = clampf(speed / 1.8, 0.6, 2.0)
+		else:
+			want = "strafe_right" if side > 0 else "strafe_left"
+			rate = clampf(speed / 1.3, 0.6, 2.2)
 	if anim.current_animation != want:
 		anim.play(want, 0.2)
 	anim.speed_scale = rate
-	# Rifle: on the shoulder when aiming or just fired, low ready otherwise;
-	# the death clip moves the arms itself
-	var raise := 1.0 if aiming or _since_fire < FACE_CAMERA_AFTER_FIRE else 0.0
-	weapon_pose.aim = lerpf(weapon_pose.aim, raise, 1.0 - exp(-14.0 * delta))
-	weapon_pose.influence = lerpf(weapon_pose.influence, 0.0 if dead else 1.0, 1.0 - exp(-8.0 * delta))
+
+	# Upper body: reload > aim/shoot > rifle held low (for clips whose arms
+	# don't hold the rifle) > the body clip itself. Not while dead.
+	var layer := ""
+	var t := 0.0
+	if dead:
+		layer = ""
+	elif reloading:
+		layer = "reload"
+		var clip_len := anim.get_animation("reload").length
+		t = (1.0 - _reload_left / RELOAD_TIME) * clip_len
+	elif aiming or _since_fire < FACE_CAMERA_AFTER_FIRE:
+		layer = "rifle_aim"
+		t = 0.3
+	elif want in UNARMED_CLIPS:
+		layer = "rifle_low"
+		t = 0.2
+	if layer != "":
+		weapon_pose.clip = anim.get_animation(layer)
+		weapon_pose.time = t
+	weapon_pose.influence = lerpf(weapon_pose.influence, 1.0 if layer != "" else 0.0, 1.0 - exp(-12.0 * delta))
 
 
 # ---------------------------------------------------------------- actions

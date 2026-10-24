@@ -12,8 +12,8 @@ var _lean_axes: Array[Vector3] = []
 
 func _ready() -> void:
 	var skeleton := get_skeleton()
-	# Blender soldier: "spine"/"chest". Meshy skins: "Spine01"/"Spine02".
-	var names := ["spine", "chest"] if skeleton.find_bone("spine") >= 0 else ["Spine01", "Spine02"]
+	# Blender soldier: "spine"/"chest". Mixamo skeleton: "Spine1"/"Spine2".
+	var names := ["spine", "chest"] if skeleton.find_bone("spine") >= 0 else ["Spine1", "Spine2"]
 	for bone_name in names:
 		var bone := skeleton.find_bone(bone_name)
 		if bone < 0:

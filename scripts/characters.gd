@@ -1,7 +1,8 @@
 extends RefCounted
 ## The playable characters. Each player picks one in the lobby (saved in
 ## Settings.character); the team only changes the uniform colour.
-## Models: docs/ASSETS.md step 1 (Meshy) + tools/meshy/merge_animations.py.
+## Models: docs/ASSETS.md step 1 (Meshy), Mixamo skeleton with fingers and
+## animations (tools/mixamo/, mixamo/README.md).
 ## Red uniforms: tools/meshy/make_team_texture.py.
 
 const ArmRelax := preload("res://scripts/arm_relax.gd")
@@ -12,6 +13,8 @@ const SCENES := [
 	preload("res://assets/characters/skins/male.glb"),
 	preload("res://assets/characters/skins/female.glb"),
 ]
+## The exported models lost their roughness map: matte cloth instead of shine
+const CLOTH_ROUGHNESS := 0.88
 ## Colour texture per team, null = the model's own (blue) texture.
 const TEAM_TEXTURES := [
 	[null, preload("res://assets/characters/team_colors/male_red.jpg")],
@@ -25,13 +28,15 @@ static func make(character: int, team: int, armed := false) -> Node3D:
 	character = clampi(character, 0, SCENES.size() - 1)
 	var model := (SCENES[character] as PackedScene).instantiate() as Node3D
 	var texture: Texture2D = TEAM_TEXTURES[character][team]
-	if texture and DisplayServer.get_name() != "headless":
+	if DisplayServer.get_name() != "headless":
 		for mi in model.find_children("*", "MeshInstance3D", true, false):
 			for i in mi.mesh.get_surface_count():
 				var mat := mi.mesh.surface_get_material(i) as StandardMaterial3D
 				if mat:
 					mat = mat.duplicate()
-					mat.albedo_texture = texture
+					mat.roughness = CLOTH_ROUGHNESS
+					if texture:
+						mat.albedo_texture = texture
 					mi.set_surface_override_material(i, mat)
 	if not armed:
 		var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)

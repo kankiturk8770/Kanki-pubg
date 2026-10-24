@@ -40,3 +40,25 @@
 ## ۳. فرستادن
 
 فایل‌های دانلودشده رو همین‌جا توی چت بفرست (یا توی همین پوشه آپلود کن).
+
+## ساختن کاراکترهای بازی از این فایل‌ها (کار من)
+
+- `anims/` = انیمیشن‌هایی که از Mixamo دانلود شده (برای مرد؛ روی زن هم اعمال می‌شه).
+- کدوم فایل اسمش توی بازی چیه: `tools/mixamo/clips.txt`
+- ساختن (با Blender پایتونی، `pip install bpy`):
+```
+python tools/mixamo/build_character.py mixamo/male_upload.fbx mixamo/anims male.glb $(cat tools/mixamo/clips.txt)
+python3 tools/meshy/prepare_model.py --keep-normal-map --max-texture=2048 male.glb assets/characters/skins/male.glb
+python3 tools/meshy/make_team_texture.py assets/characters/skins/male.glb assets/characters/team_colors/male_red.jpg
+```
+(برای زن همین‌ها با `female`.)
+
+## انیمیشن‌هایی که هنوز لازمه (دفعهٔ بعد)
+
+| جستجو کن | برای |
+|---|---|
+| Rifle Idle | ایستادن (الان یه ژست ثابته) |
+| Rifle Aiming Idle | نشونه‌گیری ایستاده |
+| Firing Rifle | شلیک |
+| Rifle Run | دویدن با اسلحه (الان پاهای دویدن معمولی + دست‌های اسلحه) |
+| Rifle Jump | پرش |
