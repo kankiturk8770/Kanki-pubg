@@ -22,6 +22,7 @@ enum Quality { LOW, MEDIUM, HIGH }
 const FPS_OPTIONS := [30, 60, 90, 120]
 
 var player_name := "Player"
+var account := ""  # logged-in account name ("" = not logged in / offline)
 var character := 0  # scripts/characters.gd: MALE / FEMALE
 var weapon := "m416"  # scripts/weapons.gd
 var server_ip := "127.0.0.1"
@@ -56,6 +57,7 @@ func load_settings() -> void:
 	if cfg.load(PATH) != OK:
 		return
 	player_name = cfg.get_value("player", "name", player_name)
+	account = cfg.get_value("player", "account", account)
 	character = cfg.get_value("player", "character", character)
 	weapon = cfg.get_value("player", "weapon", weapon)
 	server_ip = cfg.get_value("network", "ip", server_ip)
@@ -77,6 +79,7 @@ func load_settings() -> void:
 func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("player", "name", player_name)
+	cfg.set_value("player", "account", account)
 	cfg.set_value("player", "character", character)
 	cfg.set_value("player", "weapon", weapon)
 	cfg.set_value("network", "ip", server_ip)

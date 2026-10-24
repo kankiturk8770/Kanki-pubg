@@ -13,6 +13,9 @@ const POSE_TIME := 1.5
 const LOWER := deg_to_rad(28.0)  # how far the arms drop when not aiming
 
 var aim := 0.0
+## true = neck and head keep the body animation (they look ahead instead of
+## down the gun); set before setup()
+var head_from_animation := false
 var _bones: Array[int] = []
 var _pose: Array[Quaternion] = []
 var _arms: Array[int] = []
@@ -22,6 +25,8 @@ var _arms: Array[int] = []
 func setup(anim: AnimationPlayer) -> void:
 	var skeleton := get_parent() as Skeleton3D
 	for bone_name in UPPER_BODY:
+		if head_from_animation and bone_name in ["neck", "Head"]:
+			continue
 		_bones.append(skeleton.find_bone(bone_name))
 	_arms = [skeleton.find_bone("LeftArm"), skeleton.find_bone("RightArm")]
 	var clip := anim.get_animation(POSE_CLIP)

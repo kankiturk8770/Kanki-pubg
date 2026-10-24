@@ -7,14 +7,17 @@ config_version=5
 
 config/name="Kanki TDM"
 config/description="Small team deathmatch shooter for playing with friends on our own server."
-run/main_scene="res://scenes/main_menu.tscn"
+run/main_scene="res://scenes/splash.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 config/icon="res://icon.svg"
+boot_splash/bg_color=Color(0, 0, 0, 1)
+boot_splash/show_image=false
 
 [autoload]
 
 Settings="*res://autoload/settings.gd"
 Network="*res://autoload/network.gd"
+Accounts="*res://autoload/accounts.gd"
 
 [display]
 

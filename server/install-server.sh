@@ -35,6 +35,7 @@ systemctl restart kanki-tdm
 
 if command -v ufw >/dev/null 2>&1; then
   ufw allow "$PORT/udp" || true
+  ufw allow "$((PORT + 1))/udp" || true   # accounts (sign up / log in)
 fi
 
 sleep 2

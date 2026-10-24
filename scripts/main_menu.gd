@@ -1,6 +1,7 @@
 extends Control
-## Lobby: the soldier stands in the middle (drag to turn him around),
-## profile at the top-left, START at the bottom-left.
+## Lobby: the player's character stands in a hangar holding the chosen gun
+## (drag to turn it). Glass panels: profile bar at the top, loadout
+## (character + weapon) on the left, START at the bottom-left.
 ##
 ## Command line options (put them after "--"):
 ##   --server            run as dedicated server (also automatic with --headless)
@@ -9,21 +10,29 @@ extends Control
 ##   --name=Ali          player name for --join
 ##   --character=1       character for --join (0 male, 1 female)
 ##   --weapon=akm        weapon for --join (m416, akm, ump45)
+##   --lobby             skip the splash and login screens
 
 const UI := preload("res://scripts/ui/ui_theme.gd")
 const TouchControls := preload("res://scripts/hud/touch_controls.gd")
 const LayoutEditor := preload("res://scripts/hud/layout_editor.gd")
 const SettingsPanel := preload("res://scripts/ui/settings_panel.gd")
 const Characters := preload("res://scripts/characters.gd")
+const Weapons := preload("res://scripts/weapons.gd")
+const WeaponPose := preload("res://scripts/weapon_pose.gd")
+const WeaponHolder := preload("res://scripts/weapon_holder.gd")
+const BG := preload("res://assets/ui/lobby_bg.jpg")
+const PORTRAITS := [preload("res://assets/ui/portrait_male.png"), preload("res://assets/ui/portrait_female.png")]
 const GAME_SCENE := "res://scenes/game.tscn"
-const START_YELLOW := Color("f6c21c")
+const LOGIN_SCENE := "res://scenes/login.tscn"
 
 var name_edit: LineEdit
 var ip_edit: LineEdit
 var status_label: Label
 var _soldier: Node3D
 var _stage: Node3D
+var _avatar: TextureRect
 var _character_buttons: Array[Button] = []
+var _weapon_cards := {}
 
 
 func _ready() -> void:
@@ -51,39 +60,52 @@ func _ready() -> void:
 	if Network.last_error != "":
 		status_label.text = Network.last_error
 		Network.last_error = ""
+	modulate = Color.BLACK
+	create_tween().tween_property(self, "modulate", Color.WHITE, 0.4)
 
 
 func _build_ui() -> void:
+	var black := ColorRect.new()
+	black.color = Color.BLACK
+	black.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(black)
+	var bg := TextureRect.new()
+	bg.texture = BG
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bg)
 	_build_stage()
+	# Deep black at the top, left and bottom edges: panels stay readable
+	for fill in [[Vector2(0, 0), Vector2(0.5, 0)], [Vector2(0, 1), Vector2(0, 0.55)], [Vector2(0, 0), Vector2(0, 0.22)]]:
+		_shade(fill[0], fill[1])
 
-	# Dark gradient at the left and bottom so text stays readable
-	var shade := TextureRect.new()
-	var grad := GradientTexture2D.new()
-	grad.gradient = Gradient.new()
-	grad.gradient.set_color(0, Color(0, 0, 0, 0.75))
-	grad.gradient.set_color(1, Color(0, 0, 0, 0))
-	grad.fill_to = Vector2(0.55, 0)
-	shade.texture = grad
-	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	shade.stretch_mode = TextureRect.STRETCH_SCALE
-	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(shade)
-
-	_build_profile()
+	_build_top_bar()
+	_build_loadout()
 	_build_start_area()
-	_build_side_buttons()
-
-	var title := UI.label("KANKI TDM", 30, UI.ACCENT)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_anchor(title, 0.5, 0, Rect2(-200, 12, 400, 40))
-	add_child(title)
-	var hint := UI.label("Drag to rotate", 16, Color(1, 1, 1, 0.55))
+	var hint := UI.label("Drag to rotate", 16, Color(1, 1, 1, 0.45))
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_anchor(hint, 0.5, 1, Rect2(-150, -40, 300, 30))
+	_anchor(hint, 0.62, 1, Rect2(-150, -36, 300, 28))
 	add_child(hint)
 
 
-## 3D background: the soldier on a platform.
+func _shade(from: Vector2, to: Vector2) -> void:
+	var shade := TextureRect.new()
+	var grad := GradientTexture2D.new()
+	grad.gradient = Gradient.new()
+	grad.gradient.set_color(0, Color(0, 0, 0, 0.85))
+	grad.gradient.set_color(1, Color(0, 0, 0, 0))
+	grad.fill_from = from
+	grad.fill_to = to
+	shade.texture = grad
+	shade.stretch_mode = TextureRect.STRETCH_SCALE
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(shade)
+
+
+## The character in 3D over the hangar picture (transparent viewport).
 func _build_stage() -> void:
 	var holder := SubViewportContainer.new()
 	holder.stretch = true
@@ -91,78 +113,222 @@ func _build_stage() -> void:
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(holder)
 	var vp := SubViewport.new()
-	vp.msaa_3d = Viewport.MSAA_2X
+	vp.transparent_bg = true
+	vp.msaa_3d = Viewport.MSAA_4X
 	holder.add_child(vp)
 
 	var stage := Node3D.new()
 	vp.add_child(stage)
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.1, 0.13, 0.18)
+	env.background_mode = Environment.BG_CLEAR_COLOR
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	# Neutral light so skin and clothes keep their real colours
-	env.ambient_light_color = Color(0.66, 0.66, 0.68)
-	env.ambient_light_energy = 0.5
+	env.ambient_light_color = Color(0.6, 0.64, 0.72)
+	env.ambient_light_energy = 0.55
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.glow_enabled = true
 	var we := WorldEnvironment.new()
 	we.environment = env
 	stage.add_child(we)
 
+	# Cool ceiling LEDs from above, amber accent from the back like the picture
 	var key := DirectionalLight3D.new()
-	key.rotation_degrees = Vector3(-35, 25, 0)
-	key.light_energy = 1.25
-	key.light_color = Color(1.0, 0.96, 0.9)
-	key.shadow_enabled = true
+	key.rotation_degrees = Vector3(-50, 20, 0)
+	key.light_energy = 1.1
+	key.light_color = Color(0.92, 0.95, 1.0)
 	stage.add_child(key)
-	var rim := OmniLight3D.new()
-	rim.position = Vector3(-1.5, 2.5, -2.0)
-	rim.light_color = Color(0.8, 0.88, 1.0)
-	rim.light_energy = 1.5
-	rim.omni_range = 6.0
+	var rim := DirectionalLight3D.new()
+	rim.rotation_degrees = Vector3(-15, 160, 0)
+	rim.light_color = Color(1.0, 0.75, 0.45)
+	rim.light_energy = 1.2
 	stage.add_child(rim)
+	var fill := DirectionalLight3D.new()
+	fill.rotation_degrees = Vector3(-10, -120, 0)
+	fill.light_color = Color(0.45, 0.6, 1.0)
+	fill.light_energy = 0.6
+	stage.add_child(fill)
 
-	# Back wall with light strips (hangar look)
-	_stage_box(stage, Vector3(0, 3, -4), Vector3(14, 6, 0.2), Color(0.16, 0.19, 0.24))
-	for x in [-4.5, -1.5, 1.5, 4.5]:
-		_stage_box(stage, Vector3(x, 3.2, -3.85), Vector3(0.12, 4.5, 0.05), Color(0.6, 0.8, 1.0), true)
-	_stage_box(stage, Vector3(0, -0.05, 0), Vector3(14, 0.1, 10), Color(0.2, 0.22, 0.26))
-	var disc := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 1.1
-	cyl.bottom_radius = 1.15
-	cyl.height = 0.12
-	var disc_mat := StandardMaterial3D.new()
-	disc_mat.albedo_color = Color(0.3, 0.33, 0.38)
-	disc_mat.metallic = 0.7
-	disc_mat.roughness = 0.35
-	cyl.material = disc_mat
-	disc.mesh = cyl
-	disc.position.y = 0.06
-	stage.add_child(disc)
+	# Soft contact shadow on the glossy floor
+	var blob := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1.6, 1.0)
+	var grad := GradientTexture2D.new()
+	grad.gradient = Gradient.new()
+	grad.gradient.set_color(0, Color(0, 0, 0, 0.75))
+	grad.gradient.set_color(1, Color(0, 0, 0, 0))
+	grad.fill = GradientTexture2D.FILL_RADIAL
+	grad.fill_from = Vector2(0.5, 0.5)
+	grad.fill_to = Vector2(1, 0.5)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = grad
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	quad.material = mat
+	blob.mesh = quad
+	blob.rotation_degrees.x = -90
+	blob.position.y = 0.01
+	stage.add_child(blob)
 
 	_stage = stage
 	_show_character()
 
 	var cam := Camera3D.new()
-	cam.fov = 40
+	cam.fov = 34
 	stage.add_child(cam)
-	cam.look_at_from_position(Vector3(0.35, 1.25, 4.3), Vector3(0.35, 1.0, 0))
+	cam.look_at_from_position(Vector3(-0.55, 1.35, 4.6), Vector3(-0.55, 0.95, 0))
 
 
-## Puts the character picked in the profile on the stage (blue uniform).
+## Puts the player's character on the stage, holding the chosen gun.
 func _show_character() -> void:
-	var yaw := deg_to_rad(-20)
+	var yaw := deg_to_rad(-25)
 	if _soldier:
 		yaw = _soldier.rotation.y
 		_soldier.queue_free()
-	_soldier = Characters.make(Settings.character, 0)
-	_soldier.position.y = 0.12
+	_soldier = Characters.make(Settings.character, 0, true)
 	_soldier.rotation.y = yaw
 	_stage.add_child(_soldier)
 	var ap: AnimationPlayer = _soldier.find_child("AnimationPlayer", true, false)
 	ap.get_animation("lobby_idle").loop_mode = Animation.LOOP_LINEAR
 	ap.play("lobby_idle")
+	var skeleton: Skeleton3D = _soldier.find_child("Skeleton3D", true, false)
+	var pose := WeaponPose.new()
+	pose.head_from_animation = true  # look ahead, not down at the gun
+	skeleton.add_child(pose)
+	pose.setup(ap)
+	WeaponHolder.new().setup(skeleton, Settings.weapon)
+	if _avatar:
+		_avatar.texture = PORTRAITS[clampi(Settings.character, 0, 1)]
+
+
+func _build_top_bar() -> void:
+	var bar := PanelContainer.new()
+	UI.glass(bar)
+	_anchor(bar, 0, 0, Rect2(16, 14, 470, 84))
+	add_child(bar)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	bar.add_child(row)
+	_avatar = TextureRect.new()
+	_avatar.texture = PORTRAITS[clampi(Settings.character, 0, 1)]
+	_avatar.custom_minimum_size = Vector2(60, 60)
+	_avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	row.add_child(_avatar)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", -4)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(col)
+	name_edit = LineEdit.new()
+	name_edit.text = Settings.player_name
+	name_edit.max_length = 16
+	name_edit.flat = true
+	name_edit.add_theme_font_override("font", UI.FONT_TITLE)
+	name_edit.add_theme_font_size_override("font_size", 34)
+	# Logged-in players keep their account name; offline players can rename
+	name_edit.editable = Settings.account == ""
+	name_edit.add_theme_color_override("font_uneditable_color", Color.WHITE)
+	col.add_child(name_edit)
+	var online := Settings.account != ""
+	col.add_child(UI.label("ONLINE ACCOUNT" if online else "OFFLINE  ·  tap name to edit", 16,
+			Color("6fe39a") if online else UI.TEXT_DIM))
+
+	var side := HBoxContainer.new()
+	side.add_theme_constant_override("separation", 10)
+	_anchor(side, 1, 0, Rect2(-470, 22, 454, 60))
+	side.alignment = BoxContainer.ALIGNMENT_END
+	add_child(side)
+	for item in [["CONTROLS", _on_controls], ["SETTINGS", _on_settings], ["LOG OUT", _on_logout]]:
+		var b := UI.button(item[0], item[1], 54)
+		b.custom_minimum_size.x = 140
+		UI.glass(b)
+		side.add_child(b)
+
+
+## Character and weapon choice.
+func _build_loadout() -> void:
+	var panel := PanelContainer.new()
+	UI.glass(panel)
+	_anchor(panel, 0, 0, Rect2(16, 140, 380, 310))
+	add_child(panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 8)
+	panel.add_child(col)
+	col.add_child(UI.title("LOADOUT", 30, UI.ACCENT))
+
+	var pick := HBoxContainer.new()
+	col.add_child(pick)
+	for i in Characters.NAMES.size():
+		var b := UI.button(Characters.NAMES[i], _pick_character.bind(i), 44)
+		b.toggle_mode = true
+		b.button_pressed = i == Settings.character
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		pick.add_child(b)
+		_character_buttons.append(b)
+
+	for id in Weapons.ORDER:
+		var info: Dictionary = Weapons.LIST[id]
+		var card := Button.new()
+		card.toggle_mode = true
+		card.custom_minimum_size = Vector2(0, 66)
+		# Selected card: gold frame (a gold fill would hide the white text)
+		var picked := UI._box(Color(0.1, 0.08, 0.02, 0.75), UI.ACCENT)
+		picked.set_border_width_all(2)
+		card.add_theme_stylebox_override("pressed", picked)
+		card.add_theme_stylebox_override("hover_pressed", picked)
+		card.pressed.connect(_pick_weapon.bind(id))
+		col.add_child(card)
+		_weapon_cards[id] = card
+		var pic := TextureRect.new()
+		pic.texture = load("res://assets/ui/weapon_%s.png" % id)
+		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pic.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		pic.offset_left = 150
+		pic.offset_right = -8
+		card.add_child(pic)
+		var text := VBoxContainer.new()
+		text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		text.add_theme_constant_override("separation", -6)
+		text.position = Vector2(14, 0)
+		card.add_child(text)
+		text.add_child(UI.title(info["name"], 30))
+		var rpm := roundi(60.0 / info["fire_interval"])
+		text.add_child(UI.label("DMG %d  ·  %d RPM" % [info["body_damage"], rpm], 15, UI.TEXT_DIM))
+	_mark_weapon()
+
+
+func _build_start_area() -> void:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	_anchor(box, 0, 1, Rect2(16, -238, 380, 214))
+	add_child(box)
+
+	status_label = UI.label("", 18, Color("ff6b5e"))
+	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	box.add_child(status_label)
+
+	var mode := PanelContainer.new()
+	UI.glass(mode)
+	box.add_child(mode)
+	var mode_col := VBoxContainer.new()
+	mode_col.add_theme_constant_override("separation", 2)
+	mode.add_child(mode_col)
+	mode_col.add_child(UI.label("TEAM DEATHMATCH  ·  WAREHOUSE  ·  TPP", 18, UI.ACCENT))
+	var ip_row := HBoxContainer.new()
+	mode_col.add_child(ip_row)
+	ip_row.add_child(UI.label("Server", 18, UI.TEXT_DIM))
+	ip_edit = LineEdit.new()
+	ip_edit.placeholder_text = "Server IP (example: 185.10.20.30)"
+	ip_edit.text = Settings.server_ip
+	ip_edit.flat = true
+	ip_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ip_row.add_child(ip_edit)
+	var host := Button.new()
+	host.text = "HOST (LAN)"
+	host.flat = true
+	host.pressed.connect(_on_host)
+	ip_row.add_child(host)
+
+	box.add_child(UI.primary_button("START", _on_join, 86, 56))
 
 
 func _pick_character(character: int) -> void:
@@ -173,115 +339,16 @@ func _pick_character(character: int) -> void:
 	_show_character()
 
 
-func _stage_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color, glow := false) -> void:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = 0.6
-	if glow:
-		mat.emission_enabled = true
-		mat.emission = color
-		mat.emission_energy_multiplier = 0.8
-	bm.material = mat
-	mi.mesh = bm
-	mi.position = pos
-	parent.add_child(mi)
+func _pick_weapon(id: String) -> void:
+	Settings.weapon = id
+	Settings.save_settings()
+	_mark_weapon()
+	_show_character()
 
 
-func _build_profile() -> void:
-	var panel := PanelContainer.new()
-	_anchor(panel, 0, 0, Rect2(16, 16, 340, 150))
-	add_child(panel)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
-	panel.add_child(row)
-
-	var avatar := PanelContainer.new()
-	var avatar_style := StyleBoxFlat.new()
-	avatar_style.bg_color = UI.ACCENT.darkened(0.3)
-	avatar_style.set_corner_radius_all(6)
-	avatar.add_theme_stylebox_override("panel", avatar_style)
-	avatar.custom_minimum_size = Vector2(64, 64)
-	var initial := UI.label(Settings.player_name.left(1).to_upper(), 36)
-	initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	initial.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	avatar.add_child(initial)
-	row.add_child(avatar)
-
-	var col := VBoxContainer.new()
-	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(col)
-	name_edit = LineEdit.new()
-	name_edit.placeholder_text = "Your name"
-	name_edit.text = Settings.player_name
-	name_edit.max_length = 16
-	name_edit.text_changed.connect(func(t): initial.text = t.left(1).to_upper())
-	col.add_child(name_edit)
-	col.add_child(UI.label("Tap the name to change it", 14, Color(1, 1, 1, 0.6)))
-
-	# Character: everyone plays the one they pick here (team only changes the uniform colour)
-	var pick := HBoxContainer.new()
-	col.add_child(pick)
-	for i in Characters.NAMES.size():
-		var b := UI.button(Characters.NAMES[i], _pick_character.bind(i), 40)
-		b.toggle_mode = true
-		b.button_pressed = i == Settings.character
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		pick.add_child(b)
-		_character_buttons.append(b)
-
-
-func _build_start_area() -> void:
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 8)
-	_anchor(box, 0, 1, Rect2(16, -250, 360, 234))
-	add_child(box)
-
-	status_label = UI.label("", 18, Color("ff6b5e"))
-	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD
-	box.add_child(status_label)
-
-	var mode := PanelContainer.new()
-	box.add_child(mode)
-	var mode_col := VBoxContainer.new()
-	mode.add_child(mode_col)
-	mode_col.add_child(UI.label("Team Deathmatch  -  Warehouse  -  TPP", 18, UI.ACCENT))
-	var ip_row := HBoxContainer.new()
-	mode_col.add_child(ip_row)
-	ip_row.add_child(UI.label("Server", 18))
-	ip_edit = LineEdit.new()
-	ip_edit.placeholder_text = "Server IP (example: 185.10.20.30)"
-	ip_edit.text = Settings.server_ip
-	ip_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ip_row.add_child(ip_edit)
-
-	var start := Button.new()
-	start.text = "START"
-	start.custom_minimum_size.y = 84
-	start.add_theme_font_size_override("font_size", 44)
-	for state in ["normal", "hover", "pressed", "focus"]:
-		var st := StyleBoxFlat.new()
-		st.bg_color = START_YELLOW.darkened(0.15) if state == "pressed" else START_YELLOW
-		if state == "hover":
-			st.bg_color = START_YELLOW.lightened(0.1)
-		st.set_corner_radius_all(4)
-		start.add_theme_stylebox_override(state, st)
-	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
-		start.add_theme_color_override(c, Color(0.1, 0.08, 0.02))
-	start.pressed.connect(_on_join)
-	box.add_child(start)
-
-
-func _build_side_buttons() -> void:
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 10)
-	_anchor(col, 1, 0.5, Rect2(-200, -110, 184, 220))
-	add_child(col)
-	col.add_child(UI.button("CONTROLS", _on_controls))
-	col.add_child(UI.button("SETTINGS", _on_settings))
-	col.add_child(UI.button("HOST (LAN)", _on_host))
+func _mark_weapon() -> void:
+	for id in _weapon_cards:
+		_weapon_cards[id].button_pressed = id == Settings.weapon
 
 
 func _anchor(c: Control, ax: float, ay: float, rect: Rect2) -> void:
@@ -316,19 +383,26 @@ func _on_join() -> void:
 		return
 	Network.mode = Network.Mode.CLIENT
 	Network.address = Settings.server_ip
-	Network.player_name = Settings.player_name
-	Network.character = Settings.character
-	Network.weapon = Settings.weapon
-	_go_to_game()
+	_start()
 
 
 func _on_host() -> void:
 	_save_fields()
 	Network.mode = Network.Mode.HOST
+	_start()
+
+
+func _start() -> void:
 	Network.player_name = Settings.player_name
 	Network.character = Settings.character
 	Network.weapon = Settings.weapon
 	_go_to_game()
+
+
+func _on_logout() -> void:
+	Settings.account = ""
+	Settings.save_settings()
+	get_tree().change_scene_to_file(LOGIN_SCENE)
 
 
 func _on_controls() -> void:

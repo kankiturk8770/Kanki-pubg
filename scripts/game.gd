@@ -57,6 +57,7 @@ func _ready() -> void:
 	if multiplayer.is_server():
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 		print("[server] Kanki TDM listening on UDP port %d" % Network.port)
+		Accounts.start_server(Network.port)
 		if Network.mode == Network.Mode.HOST:
 			_add_player(1, Network.player_name, Network.character, Network.weapon)
 	else:
