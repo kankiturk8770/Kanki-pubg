@@ -202,6 +202,7 @@ static func _environment(root: Node3D) -> void:
 	sun.light_energy = 0.95
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 60.0
+	sun.add_to_group("sun")
 	root.add_child(sun)
 
 	var sky_mat := ProceduralSkyMaterial.new()

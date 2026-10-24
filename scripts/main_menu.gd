@@ -58,7 +58,7 @@ func _build_ui() -> void:
 	grad.gradient.set_color(1, Color(0, 0, 0, 0))
 	grad.fill_to = Vector2(0.55, 0)
 	shade.texture = grad
-	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	shade.stretch_mode = TextureRect.STRETCH_SCALE
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shade)
@@ -81,7 +81,7 @@ func _build_ui() -> void:
 func _build_stage() -> void:
 	var holder := SubViewportContainer.new()
 	holder.stretch = true
-	holder.set_anchors_preset(Control.PRESET_FULL_RECT)
+	holder.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(holder)
 	var vp := SubViewport.new()
@@ -292,10 +292,10 @@ func _on_host() -> void:
 
 func _on_controls() -> void:
 	var screen := Control.new()
-	screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
 	bg.color = Color(0.25, 0.3, 0.27)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	screen.add_child(bg)
 	var controls := TouchControls.new()
 	screen.add_child(controls)

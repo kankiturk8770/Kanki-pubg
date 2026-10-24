@@ -27,6 +27,7 @@ window/handheld/orientation=4
 [input_devices]
 
 pointing/emulate_mouse_from_touch=true
+sensors/enable_gyroscope=true
 
 [physics]
 

@@ -31,6 +31,7 @@ var _leaving := false
 
 func _ready() -> void:
 	MapBuilder.build(self)
+	Settings.apply_graphics()
 
 	players_root = Node3D.new()
 	players_root.name = "Players"

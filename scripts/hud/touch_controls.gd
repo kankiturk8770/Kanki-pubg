@@ -19,6 +19,8 @@ const DEFAULTS := {
 	"jump": {"pos": Vector2(0.94, 0.78), "size": 88.0, "label": "JUMP"},
 	"crouch": {"pos": Vector2(0.82, 0.88), "size": 88.0, "label": "CROUCH"},
 	"reload": {"pos": Vector2(0.7, 0.88), "size": 76.0, "label": "RELOAD"},
+	"peek_left": {"pos": Vector2(0.05, 0.52), "size": 70.0, "label": "PEEK L"},
+	"peek_right": {"pos": Vector2(0.14, 0.47), "size": 70.0, "label": "PEEK R"},
 }
 const HOLD_IDS := ["fire", "fire_left"]
 
@@ -38,7 +40,7 @@ var _drag_offset := Vector2.ZERO
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for id in DEFAULTS:
 		var e := TouchElement.new()
@@ -201,6 +203,7 @@ class TouchElement extends Control:
 	var is_fire := false
 	var pressed := false
 	var highlighted := false
+	var active := false  # toggled state (peek on) or sprint lock on the joystick
 	var knob := Vector2.ZERO  # joystick direction, length 0..1
 	var center := Vector2.ZERO
 	var diameter := 100.0
@@ -244,10 +247,25 @@ class TouchElement extends Control:
 		draw_arc(c, r - 1.5, 0, TAU, 48, Color(1, 1, 1, 0.75), 3.0, true)
 		if highlighted:
 			draw_arc(c, r + 5, 0, TAU, 48, Color("f2b632"), 4.0, true)
+		if active and not is_joystick:
+			draw_circle(c, r, Color(0.95, 0.71, 0.2, 0.35))
 		if is_joystick:
 			draw_circle(c + knob * r * 0.55, r * 0.33, Color(1, 1, 1, 0.6))
+			if active:
+				# sprint lock: small arrow above the joystick
+				var top := c + Vector2(0, -r - 18)
+				draw_colored_polygon(PackedVector2Array([top + Vector2(-16, 10), top + Vector2(16, 10), top + Vector2(0, -10)]),
+						Color(0.95, 0.71, 0.2, 0.9))
 			return
 		var font := ThemeDB.fallback_font
 		var fs := int(clampf(r * 0.3, 11, 28))
 		var ts := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 		draw_string(font, c + Vector2(-ts.x / 2, fs * 0.35), label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+
+
+## Shows on/off states (peek buttons, sprint arrow on the joystick).
+func set_active(id: String, value: bool) -> void:
+	var e: TouchElement = elements.get(id)
+	if e and e.active != value:
+		e.active = value
+		e.queue_redraw()

@@ -18,6 +18,7 @@ var _score_labels: Array[Label] = []
 var _timer_label: Label
 var _health_bar: ProgressBar
 var _ammo_label: Label
+var _fps_label: Label
 var _kill_feed: VBoxContainer
 var _center_label: Label
 var _sub_label: Label
@@ -35,19 +36,19 @@ var _notice_left := 0.0
 
 func _ready() -> void:
 	_root = Control.new()
-	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.theme = UI.make()
 	add_child(_root)
 
 	_damage_flash = ColorRect.new()
 	_damage_flash.color = Color(0.8, 0, 0, 0)
-	_damage_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_damage_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_damage_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_damage_flash)
 
 	_crosshair = Control.new()
-	_crosshair.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_crosshair.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_crosshair.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_crosshair.draw.connect(_draw_crosshair)
 	_root.add_child(_crosshair)
@@ -105,6 +106,10 @@ func _build_top_bar() -> void:
 	_root.add_child(left)
 	left.add_child(UI.button("MENU", _open_settings, 48))
 	left.add_child(UI.button("SCORE", func(): _scoreboard_pinned = not _scoreboard_pinned, 48))
+
+	_fps_label = UI.label("", 18, Color(0.6, 1.0, 0.6))
+	_anchor(_fps_label, 0, 0, Rect2(16, 66, 140, 24))
+	_root.add_child(_fps_label)
 
 	_kill_feed = VBoxContainer.new()
 	_kill_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -284,7 +289,15 @@ func _process(delta: float) -> void:
 	var t := int(ceil(game.time_left))
 	_timer_label.text = "%d:%02d" % [t / 60, t % 60]
 
+	_fps_label.visible = Settings.show_fps
+	if Settings.show_fps:
+		_fps_label.text = "%d FPS" % Engine.get_frames_per_second()
+
 	if player:
+		touch.set_active("joystick", player.sprinting)
+		touch.set_active("peek_left", player.peek == -1)
+		touch.set_active("peek_right", player.peek == 1)
+		touch.set_active("aim", player.aiming)
 		_health_bar.value = player.health
 		var fill: StyleBoxFlat = _health_bar.get_theme_stylebox("fill")
 		fill.bg_color = Color(0.92, 0.92, 0.92) if player.health > 30 else Color(0.9, 0.2, 0.15)

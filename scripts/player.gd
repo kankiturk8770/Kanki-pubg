@@ -13,11 +13,14 @@ const AimModifier := preload("res://scripts/aim_modifier.gd")
 const SOLDIER_SCENE := preload("res://assets/characters/soldier.glb")
 const LOOPING_ANIMS := ["idle", "run", "crouch_idle", "crouch_walk", "jump"]
 
-const WALK_SPEED := 5.0
-const ADS_SPEED := 3.2
+const WALK_SPEED := 5.0     # normal run (joystick fully pushed)
+const SPRINT_SPEED := 6.4
+const ADS_SPEED := 3.0
 const CROUCH_SPEED := 2.4
 const JUMP_VELOCITY := 4.6
-const ACCEL := 40.0
+const ACCEL := 22.0          # how fast you speed up (m/s per second)
+const DECEL := 30.0          # how fast you stop
+const AIR_ACCEL := 5.0
 const STAND_HEIGHT := 1.8
 const CROUCH_HEIGHT := 1.35
 
@@ -30,9 +33,13 @@ const RELOAD_TIME := 2.1
 const RANGE := 150.0
 
 const HIP_FOV := 75.0
-const ADS_FOV := 42.0
 const ARM_LENGTH := 2.6
 const ADS_ARM_LENGTH := 1.1
+## Camera field of view when aiming with each scope.
+const SCOPE_FOV := {"red_dot": 50.0, "2x": 36.0, "3x": 26.0, "4x": 19.0, "6x": 13.0, "8x": 9.5}
+const PEEK_ANGLE := 0.32     # how far the upper body leans (radians)
+## Body keeps facing the camera this long after the last shot.
+const FACE_CAMERA_AFTER_FIRE := 0.8
 
 var peer_id := 0
 var player_name := ""
@@ -44,7 +51,9 @@ var game: Node3D
 var net_position := Vector3.ZERO
 var net_yaw := 0.0
 var net_pitch := 0.0
+var net_body_yaw := 0.0
 var crouching := false
+var peek := 0                # -1 left, 0 none, 1 right
 
 # Decided by the server (sent with RPCs)
 var health := MAX_HEALTH
@@ -53,6 +62,13 @@ var dead := false
 # Only used on the owner's device
 var pitch := 0.0
 var aiming := false
+var scope := "red_dot"       # scope on the current gun
+var sprinting := false
+var body_yaw := 0.0          # where the soldier's body faces (camera yaw is rotation.y)
+var _since_fire := 10.0
+var _sprint_hold := 0.0
+var _lean := 0.0
+var _prev_body_yaw := 0.0
 var ammo := MAG_SIZE
 var reloading := false
 var _reload_left := 0.0
@@ -93,6 +109,8 @@ func setup(data: Dictionary, local_id: int, game_ref: Node3D) -> void:
 	rotation.y = _spawn_yaw()
 	net_position = position
 	net_yaw = rotation.y
+	body_yaw = rotation.y
+	net_body_yaw = body_yaw
 	_last_pos = position
 
 	collision_layer = 2
@@ -184,11 +202,11 @@ func _build_body() -> void:
 
 func _build_sync() -> void:
 	var cfg := SceneReplicationConfig.new()
-	for prop in ["net_position", "net_yaw", "net_pitch", "crouching"]:
+	for prop in ["net_position", "net_yaw", "net_pitch", "net_body_yaw", "crouching", "peek"]:
 		var path := NodePath(".:" + prop)
 		cfg.add_property(path)
 		cfg.property_set_spawn(path, true)
-		var mode := SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE if prop == "crouching" \
+		var mode := SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE if prop in ["crouching", "peek"] \
 				else SceneReplicationConfig.REPLICATION_MODE_ALWAYS
 		cfg.property_set_replication_mode(path, mode)
 	var sync := MultiplayerSynchronizer.new()
@@ -231,32 +249,62 @@ func _physics_process(delta: float) -> void:
 func _owner_update(delta: float) -> void:
 	var hud = game.hud
 	var can_act: bool = not dead and game.is_playing()
+	var menu_open: bool = hud != null and hud.menu_open
+	var sens_key := scope if aiming else "tpp"
 
-	# Looking around: finger drag (pixels) and/or mouse
+	# Looking around: finger drag + gyroscope + mouse
 	var look := Vector2.ZERO
-	var ads_mult := Settings.ads_sensitivity if aiming else 1.0
 	if hud:
 		var screen_w := get_viewport().get_visible_rect().size.x
-		look += hud.take_look_delta() / screen_w * PI * Settings.look_sensitivity * ads_mult
-	look += _mouse_delta * 0.0025 * Settings.mouse_sensitivity * ads_mult
+		look += hud.take_look_delta() / screen_w * PI * Settings.drag_factor(sens_key)
+	var gyro_k := Settings.gyro_factor(sens_key)
+	if gyro_k > 0.0 and Settings.use_touch_controls() and not menu_open:
+		var g := Input.get_gyroscope()
+		var gx := -g.y * (-1.0 if Settings.gyro_invert_x else 1.0)
+		var gy := -g.x * (-1.0 if Settings.gyro_invert_y else 1.0)
+		look += Vector2(gx, gy) * delta * gyro_k
+	var mouse_k := 0.0025 * Settings.mouse_sensitivity * (Settings.drag_factor(sens_key) if aiming else 1.0)
+	look += _mouse_delta * mouse_k
 	_mouse_delta = Vector2.ZERO
 	if not dead:
 		rotation.y -= look.x
 		pitch = clampf(pitch - look.y, deg_to_rad(-75), deg_to_rad(70))
 
-	# Moving
+	# Joystick / keys
 	var input := Vector2.ZERO
+	var stick := Vector2.ZERO
 	if can_act:
 		input = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		if hud:
-			input += hud.get_move()
+			stick = hud.get_move()
+			input += stick
 		input = input.limit_length(1.0)
-	var dir := global_basis * Vector3(input.x, 0, input.y)
-	dir.y = 0
-	dir = dir.normalized() * input.length()
-	var speed := CROUCH_SPEED if crouching else (ADS_SPEED if aiming else WALK_SPEED)
-	velocity.x = move_toward(velocity.x, dir.x * speed, ACCEL * delta)
-	velocity.z = move_toward(velocity.z, dir.z * speed, ACCEL * delta)
+
+	# Sprint: push the joystick all the way forward (or hold Shift)
+	var wants_sprint := Input.is_action_pressed("sprint") and input.y < -0.5
+	if Settings.auto_sprint and stick.length() > 0.95 and stick.y < -0.85:
+		_sprint_hold += delta
+	else:
+		_sprint_hold = 0.0
+	wants_sprint = wants_sprint or _sprint_hold > 0.25
+	sprinting = wants_sprint and not aiming and not crouching and not reloading \
+			and _since_fire > 0.3 and is_on_floor()
+	if sprinting:
+		peek = 0
+
+	var dir := Basis(Vector3.UP, rotation.y) * Vector3(input.x, 0, input.y)
+	var speed := WALK_SPEED
+	if sprinting:
+		speed = SPRINT_SPEED
+	elif crouching:
+		speed = CROUCH_SPEED
+	elif aiming or peek != 0:
+		speed = ADS_SPEED
+	var target := dir * speed
+	var rate := AIR_ACCEL if not is_on_floor() else (ACCEL if target.length() > 0.1 else DECEL)
+	var horizontal := Vector2(velocity.x, velocity.z).move_toward(Vector2(target.x, target.z), rate * delta)
+	velocity.x = horizontal.x
+	velocity.z = horizontal.y
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
 	if _want_jump and can_act and is_on_floor():
@@ -267,6 +315,18 @@ func _owner_update(delta: float) -> void:
 	_want_jump = false
 	if not dead:
 		move_and_slide()
+
+	# Where the body faces: towards the camera when aiming/shooting/peeking,
+	# otherwise it turns smoothly towards the direction you run.
+	_since_fire += delta
+	var face_camera := aiming or peek != 0 or _since_fire < FACE_CAMERA_AFTER_FIRE
+	var body_target := body_yaw
+	if face_camera:
+		body_target = rotation.y
+	elif dir.length() > 0.1:
+		body_target = atan2(-dir.x, -dir.z)
+	var turn_speed := 18.0 if face_camera else 9.0
+	body_yaw = lerp_angle(body_yaw, body_target, 1.0 - exp(-turn_speed * delta))
 
 	# Shooting
 	_fire_cooldown -= delta
@@ -286,28 +346,32 @@ func _owner_update(delta: float) -> void:
 		else:
 			start_reload()
 
-	# Camera follows aim
+	# Camera: over the shoulder, closer when aiming, moves out when peeking
+	var t := 1.0 - exp(-12.0 * delta)
 	cam_pivot.rotation.x = pitch
-	cam_pivot.position.y = 1.1 if crouching else 1.6
-	var t := clampf(delta * 12.0, 0, 1)
+	cam_pivot.position.y = lerpf(cam_pivot.position.y, 1.15 if crouching else 1.6, t)
+	cam_pivot.rotation.z = lerpf(cam_pivot.rotation.z, -peek * 0.06, t)
+	var side := 0.55 + peek * 0.4
 	spring.spring_length = lerpf(spring.spring_length, ADS_ARM_LENGTH if aiming else ARM_LENGTH, t)
-	spring.position.x = lerpf(spring.position.x, 0.45 if aiming else 0.55, t)
-	camera.fov = lerpf(camera.fov, ADS_FOV if aiming else HIP_FOV, t)
+	spring.position.x = lerpf(spring.position.x, side - (0.1 if aiming else 0.0), t)
+	camera.fov = lerpf(camera.fov, SCOPE_FOV.get(scope, 50.0) if aiming else HIP_FOV, t)
 
 	net_position = global_position
 	net_yaw = rotation.y
 	net_pitch = pitch
+	net_body_yaw = body_yaw
 
 
 func _remote_update(delta: float) -> void:
 	if dead:
 		return
-	var t := clampf(delta * 15.0, 0, 1)
+	var t := 1.0 - exp(-15.0 * delta)
 	if global_position.distance_to(net_position) > 4.0:
 		global_position = net_position
 	else:
 		global_position = global_position.lerp(net_position, t)
 	rotation.y = lerp_angle(rotation.y, net_yaw, t)
+	body_yaw = lerp_angle(body_yaw, net_body_yaw, t)
 	pitch = lerpf(pitch, net_pitch, t)
 	if (capsule.height < STAND_HEIGHT) != crouching:
 		_apply_crouch()
@@ -321,11 +385,26 @@ func _animate(delta: float) -> void:
 	var vertical := moved.y / maxf(delta, 0.001)
 	moved.y = 0
 	var speed := moved.length() / maxf(delta, 0.001)
-	aim_mod.pitch = 0.0 if dead else pitch
+
+	# Body direction, with a small lean into turns (like a real runner)
+	var turn_rate := angle_difference(_prev_body_yaw, body_yaw) / maxf(delta, 0.001)
+	_prev_body_yaw = body_yaw
+	model.rotation.y = body_yaw - rotation.y + PI
+	var lean_target := clampf(-turn_rate * 0.03 * clampf(speed / WALK_SPEED, 0, 1), -0.14, 0.14)
+	model.rotation.z = lerpf(model.rotation.z, 0.0 if dead else lean_target, 1.0 - exp(-8.0 * delta))
+
+	# Upper body follows the aim only when facing the camera direction
+	var facing := clampf(cos(angle_difference(body_yaw, rotation.y)), 0.0, 1.0)
+	aim_mod.pitch = 0.0 if dead else pitch * facing
+	_lean = lerpf(_lean, 0.0 if dead else peek * PEEK_ANGLE, 1.0 - exp(-12.0 * delta))
+	aim_mod.lean = _lean
 
 	var in_air := not is_on_floor() if is_local else absf(vertical) > 1.5
 	var want := "idle"
 	var rate := 1.0
+	# Walking backwards (relative to the body) plays the cycle in reverse
+	var forward := Vector3(sin(body_yaw + PI), 0, cos(body_yaw + PI))
+	var backwards := speed > 0.4 and moved.normalized().dot(forward) < -0.3
 	if dead:
 		want = "death"
 	elif in_air:
@@ -335,9 +414,11 @@ func _animate(delta: float) -> void:
 		rate = clampf(speed / CROUCH_SPEED, 0.6, 1.5) if speed > 0.4 else 1.0
 	elif speed > 0.4:
 		want = "run"
-		rate = clampf(speed / WALK_SPEED * 1.3, 0.6, 1.4)
+		rate = clampf(speed / WALK_SPEED * 1.3, 0.5, 1.8)
+	if backwards and want in ["run", "crouch_walk"]:
+		rate = -rate
 	if anim.current_animation != want:
-		anim.play(want, 0.15)
+		anim.play(want, 0.2)
 	anim.speed_scale = rate
 
 
@@ -363,6 +444,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		on_action("reload")
 	elif event.is_action("aim") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		aiming = event.is_pressed()  # PC: hold right mouse button
+	elif event.is_action("peek_left") or event.is_action("peek_right"):
+		# PC: hold Q / E
+		var dir_peek := -1 if event.is_action("peek_left") else 1
+		if event.is_pressed():
+			peek = dir_peek
+		elif peek == dir_peek:
+			peek = 0
 
 
 ## Called by the on-screen buttons (and keyboard above).
@@ -378,6 +466,10 @@ func on_action(id: String) -> void:
 			start_reload()
 		"aim":
 			aiming = not aiming
+		"peek_left":
+			peek = 0 if peek == -1 else -1
+		"peek_right":
+			peek = 0 if peek == 1 else 1
 
 
 func set_crouch(value: bool) -> void:
@@ -400,8 +492,9 @@ func start_reload() -> void:
 ## Spread in degrees - bigger when moving/jumping, small when aiming.
 func current_spread() -> float:
 	var s := 0.3 if aiming else 1.6
-	if Vector2(velocity.x, velocity.z).length() > 1.0:
-		s += 0.8
+	var moving := Vector2(velocity.x, velocity.z).length()
+	if moving > 1.0:
+		s += 0.8 if moving < WALK_SPEED + 0.5 else 2.0
 	if not is_on_floor():
 		s += 2.0
 	if crouching:
@@ -411,6 +504,7 @@ func current_spread() -> float:
 
 func _shoot() -> void:
 	_fire_cooldown = FIRE_INTERVAL
+	_since_fire = 0.0
 	ammo -= 1
 	var origin := camera.global_position
 	var dir := _apply_spread(-camera.global_basis.z, deg_to_rad(current_spread()))
@@ -439,6 +533,7 @@ func _bot_think() -> bool:
 		return false
 	var to := target.global_position + Vector3(0, 1.2, 0) - camera.global_position
 	rotation.y = atan2(-to.x, -to.z)
+	body_yaw = rotation.y
 	pitch = atan2(to.y, Vector2(to.x, to.z).length())
 	var q := PhysicsRayQueryParameters3D.create(camera.global_position, target.global_position + Vector3(0, 1.2, 0))
 	q.exclude = [get_rid()]
@@ -565,6 +660,7 @@ func set_dead() -> void:
 	shape.set_deferred("disabled", true)
 	name_tag.visible = false
 	aiming = false
+	peek = 0
 	if is_local and game.hud:
 		game.hud.on_local_death(game.RESPAWN_DELAY)
 
@@ -583,7 +679,11 @@ func do_respawn(pos: Vector3, yaw: float) -> void:
 	velocity = Vector3.ZERO
 	rotation.y = yaw
 	net_yaw = yaw
+	body_yaw = yaw
+	net_body_yaw = yaw
 	if is_local:
+		peek = 0
+		sprinting = false
 		pitch = 0
 		ammo = MAG_SIZE
 		reloading = false
