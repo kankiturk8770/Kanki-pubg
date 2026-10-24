@@ -13,7 +13,7 @@ const TouchControls := preload("res://scripts/hud/touch_controls.gd")
 const LayoutEditor := preload("res://scripts/hud/layout_editor.gd")
 const SettingsPanel := preload("res://scripts/ui/settings_panel.gd")
 const GAME_SCENE := "res://scenes/game.tscn"
-const SOLDIER_SCENE := preload("res://assets/characters/soldier.glb")
+const SOLDIER_SCENE := preload("res://assets/characters/skins/default_blue.glb")
 const START_YELLOW := Color("f6c21c")
 
 var name_edit: LineEdit

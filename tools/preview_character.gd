@@ -1,6 +1,7 @@
 extends SceneTree
 ## Renders the soldier from a few angles into a PNG (for checking the model).
-##   godot --path . --script tools/preview_character.gd -- out.png [animation] [time]
+##   godot --path . --script tools/preview_character.gd -- out.png [animation] [time] [angles] [model]
+## model defaults to res://assets/characters/soldier.glb
 
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -28,7 +29,8 @@ func _init() -> void:
 	floor_mesh.mesh = plane
 	root.add_child(floor_mesh)
 
-	var scene: PackedScene = load("res://assets/characters/soldier.glb")
+	var model: String = args[4] if args.size() > 4 else "res://assets/characters/soldier.glb"
+	var scene: PackedScene = load(model)
 	var angles: Array = [0.0, 140.0, 90.0, 220.0]
 	if args.size() > 3:
 		angles = Array(args[3].split(",")).map(func(a): return float(a))

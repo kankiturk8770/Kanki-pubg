@@ -11,6 +11,12 @@ const UI := preload("res://scripts/ui/ui_theme.gd")
 const Fx := preload("res://scripts/fx.gd")
 const AimModifier := preload("res://scripts/aim_modifier.gd")
 const SOLDIER_SCENE := preload("res://assets/characters/soldier.glb")
+# Skin of each team (index = team). Teams without a Meshy skin yet use the
+# old Blender soldier. See docs/ASSETS.md, step 1.
+const TEAM_SKINS := [
+	preload("res://assets/characters/skins/default_blue.glb"),
+	SOLDIER_SCENE,
+]
 const LOOPING_ANIMS := ["idle", "run", "crouch_idle", "crouch_walk", "jump"]
 
 const WALK_SPEED := 5.0     # normal run (joystick fully pushed)
@@ -141,9 +147,9 @@ func _build_body() -> void:
 
 	var team_color: Color = UI.TEAM_COLORS[team]
 
-	# The soldier model (made with tools/blender/make_soldier.py).
+	# The soldier model (Meshy skin, or tools/blender/make_soldier.py).
 	# It faces +Z, the game uses -Z as forward, so turn it around.
-	model = SOLDIER_SCENE.instantiate()
+	model = TEAM_SKINS[team].instantiate()
 	model.rotation.y = PI
 	add_child(model)
 	anim = model.find_child("AnimationPlayer", true, false)
@@ -155,9 +161,19 @@ func _build_body() -> void:
 	var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
 	aim_mod = AimModifier.new()
 	skeleton.add_child(aim_mod)
-	muzzle = BoneAttachment3D.new()
-	muzzle.bone_name = "muzzle"
-	skeleton.add_child(muzzle)
+	if skeleton.find_bone("muzzle") >= 0:
+		muzzle = BoneAttachment3D.new()
+		muzzle.bone_name = "muzzle"
+		skeleton.add_child(muzzle)
+	else:
+		# Meshy skins have no rifle (and no muzzle bone) yet: shoot from
+		# just in front of the right hand until weapons are attached.
+		var hand := BoneAttachment3D.new()
+		hand.bone_name = "RightHand"
+		skeleton.add_child(hand)
+		muzzle = Node3D.new()
+		hand.add_child(muzzle)
+		muzzle.position = Vector3(0, 0.1, 0)
 
 	# Team colour on the vest
 	for mi in model.find_children("*", "MeshInstance3D", true, false):
