@@ -1,10 +1,11 @@
 """Builds a game-ready character GLB from two Meshy downloads.
 
-  python3 tools/meshy/merge_animations.py rigged.glb animations.glb out.glb
+  python3 tools/meshy/merge_animations.py rigged.glb animations.glb [more.glb ...] out.glb
 
 - rigged.glb      Meshy Rigging result (mesh + full PBR textures, no clips)
-- animations.glb  Meshy Animation result made with several action_ids
-                  (same skeleton, but only a base color texture)
+- animations.glb  Meshy Animation results made with several action_ids
+                  (same skeleton, but only a base color texture). One
+                  request takes at most 10 actions, so pass several files.
 
 The output is the rigged model with the clips copied in and renamed to the
 names the game plays (see CLIP_NAMES). A still "crouch_idle" clip is made
@@ -17,7 +18,8 @@ import sys
 
 # Meshy action name -> name used in scripts/player.gd
 CLIP_NAMES = {
-    "Idle": "idle",
+    "Idle_9": "idle",
+    "Idle_3": "lobby_idle",
     "Rifle_Charge_inplace": "run",
     "Lean_Forward_Sprint_inplace": "sprint",
     "Walk_Backward_inplace": "walk_back",
@@ -70,16 +72,10 @@ def add_accessor(gltf, binary, acc, raw):
     return len(gltf["accessors"]) - 1
 
 
-def main(rigged_path, anims_path, out_path):
-    model, model_bin = read_glb(rigged_path)
+def copy_clips(model, model_bin, anims_path, first_frames):
     clips, clips_bin = read_glb(anims_path)
-    model_nodes = [n.get("name") for n in model["nodes"]]
-    clip_nodes = [n.get("name") for n in clips["nodes"]]
-    if model_nodes != clip_nodes:
-        sys.exit("The two files have different skeletons - were they made from the same rig task?")
-
-    model["animations"] = []
-    first_frames = {}
+    if [n.get("name") for n in model["nodes"]] != [n.get("name") for n in clips["nodes"]]:
+        sys.exit(anims_path + " has a different skeleton - was it made from the same rig task?")
     for anim in clips["animations"]:
         name = CLIP_NAMES.get(anim["name"])
         if name is None:
@@ -99,6 +95,14 @@ def main(rigged_path, anims_path, out_path):
         model["animations"].append({"name": name, "channels": anim["channels"], "samplers": samplers})
         first_frames[name] = (anim["channels"], still)
 
+
+def main(rigged_path, anims_paths, out_path):
+    model, model_bin = read_glb(rigged_path)
+    model["animations"] = []
+    first_frames = {}
+    for anims_path in anims_paths:
+        copy_clips(model, model_bin, anims_path, first_frames)
+
     for name, source in STILL_CLIPS.items():
         channels, still = first_frames[source]
         times = struct.pack("<ff", 0.0, 1.0)
@@ -117,6 +121,6 @@ def main(rigged_path, anims_path, out_path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
+    if len(sys.argv) < 4:
         sys.exit(__doc__)
-    main(*sys.argv[1:])
+    main(sys.argv[1], sys.argv[2:-1], sys.argv[-1])

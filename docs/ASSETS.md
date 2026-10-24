@@ -92,9 +92,10 @@ cartoon, anime, low poly, toy, blurry texture, extra limbs, extra fingers, defor
 📌 هر کدوم رو **جدا** بساز. اول فقط شمارهٔ ۱ رو بساز و بفرست تا کیفیتش رو تست کنیم.
 
 ### ✅ ۱. سرباز تیم آبی (پیش‌فرض) — `default_blue.glb`
-> ✅ ساخته شد با API مال Meshy (اسکلت و ۱۰ انیمیشن هم با خود Meshy، نه Mixamo). فرمتش GLB شد چون Godot راحت‌تر می‌خونه.
+> ✅ ساخته شد با API مال Meshy (اسکلت و انیمیشن هم با خود Meshy، نه Mixamo). فرمتش GLB شد چون Godot راحت‌تر می‌خونه.
+> نسخهٔ اول (با ماسک صورت) کارتونی شد. این پرامپت طبیعی‌تر درومد: **صورت پیدا باشه، ماسک نداشته باشه، A-pose باشه**.
 ```
-realistic special forces soldier, full body, standing in T-pose, arms straight out to the sides, dark navy blue combat uniform, black tactical plate carrier vest with pouches, blue shoulder patch, black ballistic helmet, black face mask, tactical gloves, black combat boots, no weapon, empty hands, game character, highly detailed, PBR
+photorealistic male military operator, 30 years old, full body, realistic adult human proportions, standing straight in A-pose, arms relaxed out to the sides, clean shaven realistic human face, natural tanned skin, calm expression, no mask, black ballistic helmet with headset, dark navy blue combat uniform, black tactical plate carrier vest with pouches, tactical gloves, black combat boots, no weapon, empty hands, lifelike 3D scan, real person, highly detailed, PBR
 ```
 
 ### ☐ ۲. سرباز تیم قرمز (پیش‌فرض) — `default_red.fbx`

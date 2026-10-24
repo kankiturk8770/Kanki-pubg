@@ -10,6 +10,7 @@ extends CharacterBody3D
 const UI := preload("res://scripts/ui/ui_theme.gd")
 const Fx := preload("res://scripts/fx.gd")
 const AimModifier := preload("res://scripts/aim_modifier.gd")
+const ArmRelax := preload("res://scripts/arm_relax.gd")
 const SOLDIER_SCENE := preload("res://assets/characters/soldier.glb")
 # Skin of each team (index = team). Teams without a Meshy skin yet use the
 # old Blender soldier. See docs/ASSETS.md, step 1.
@@ -94,6 +95,7 @@ var shape: CollisionShape3D
 var model: Node3D
 var anim: AnimationPlayer
 var aim_mod: SkeletonModifier3D
+var arm_relax: SkeletonModifier3D   # only on Meshy skins
 var muzzle: Node3D
 var flash: MeshInstance3D
 var name_tag: Label3D
@@ -159,6 +161,9 @@ func _build_body() -> void:
 	anim.play("idle")
 
 	var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
+	if skeleton.find_bone("LeftForeArm") >= 0:
+		arm_relax = ArmRelax.new()
+		skeleton.add_child(arm_relax)
 	aim_mod = AimModifier.new()
 	skeleton.add_child(aim_mod)
 	if skeleton.find_bone("muzzle") >= 0:
@@ -436,6 +441,9 @@ func _animate(delta: float) -> void:
 	if anim.current_animation != want:
 		anim.play(want, 0.2)
 	anim.speed_scale = rate
+	if arm_relax:
+		var relax := 1.0 if want in ["idle", "crouch_idle"] else 0.0
+		arm_relax.influence = lerpf(arm_relax.influence, relax, 1.0 - exp(-10.0 * delta))
 
 
 # ---------------------------------------------------------------- actions

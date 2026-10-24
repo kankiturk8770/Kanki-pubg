@@ -12,6 +12,7 @@ const UI := preload("res://scripts/ui/ui_theme.gd")
 const TouchControls := preload("res://scripts/hud/touch_controls.gd")
 const LayoutEditor := preload("res://scripts/hud/layout_editor.gd")
 const SettingsPanel := preload("res://scripts/ui/settings_panel.gd")
+const ArmRelax := preload("res://scripts/arm_relax.gd")
 const GAME_SCENE := "res://scenes/game.tscn"
 const SOLDIER_SCENE := preload("res://assets/characters/skins/default_blue.glb")
 const START_YELLOW := Color("f6c21c")
@@ -94,8 +95,9 @@ func _build_stage() -> void:
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color(0.1, 0.13, 0.18)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.55, 0.62, 0.75)
-	env.ambient_light_energy = 0.55
+	# Neutral light so skin and clothes keep their real colours
+	env.ambient_light_color = Color(0.66, 0.66, 0.68)
+	env.ambient_light_energy = 0.5
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.glow_enabled = true
 	var we := WorldEnvironment.new()
@@ -104,13 +106,14 @@ func _build_stage() -> void:
 
 	var key := DirectionalLight3D.new()
 	key.rotation_degrees = Vector3(-35, 25, 0)
-	key.light_energy = 1.1
+	key.light_energy = 1.25
+	key.light_color = Color(1.0, 0.96, 0.9)
 	key.shadow_enabled = true
 	stage.add_child(key)
 	var rim := OmniLight3D.new()
 	rim.position = Vector3(-1.5, 2.5, -2.0)
-	rim.light_color = Color(0.5, 0.7, 1.0)
-	rim.light_energy = 2.5
+	rim.light_color = Color(0.8, 0.88, 1.0)
+	rim.light_energy = 1.5
 	rim.omni_range = 6.0
 	stage.add_child(rim)
 
@@ -137,9 +140,13 @@ func _build_stage() -> void:
 	_soldier.position.y = 0.12
 	_soldier.rotation.y = deg_to_rad(-20)
 	stage.add_child(_soldier)
+	var skeleton: Skeleton3D = _soldier.find_child("Skeleton3D", true, false)
+	if skeleton.find_bone("LeftForeArm") >= 0:
+		skeleton.add_child(ArmRelax.new())
 	var ap: AnimationPlayer = _soldier.find_child("AnimationPlayer", true, false)
-	ap.get_animation("idle").loop_mode = Animation.LOOP_LINEAR
-	ap.play("idle")
+	var idle := "lobby_idle" if ap.has_animation("lobby_idle") else "idle"
+	ap.get_animation(idle).loop_mode = Animation.LOOP_LINEAR
+	ap.play(idle)
 
 	var cam := Camera3D.new()
 	cam.fov = 40

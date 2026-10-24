@@ -199,7 +199,8 @@ static func _flat(color: Color) -> Material:
 static func _environment(root: Node3D) -> void:
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-55, 35, 0)
-	sun.light_energy = 0.95
+	sun.light_energy = 1.05
+	sun.light_color = Color(1.0, 0.96, 0.9)  # warm daylight
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 60.0
 	sun.add_to_group("sun")
@@ -215,7 +216,7 @@ static func _environment(root: Node3D) -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.6, 0.65, 0.75)
+	env.ambient_light_color = Color(0.64, 0.66, 0.7)
 	env.ambient_light_energy = 0.5
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	var world_env := WorldEnvironment.new()
