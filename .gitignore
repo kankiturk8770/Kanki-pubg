@@ -15,3 +15,6 @@ build/
 # Textures Godot extracts from imported .glb files (made again on import)
 assets/**/*_Image_*.jpg
 assets/**/*_Image_*.png
+
+# Python cache
+__pycache__/
