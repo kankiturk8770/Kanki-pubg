@@ -331,7 +331,19 @@ func _build_start_area() -> void:
 	host.pressed.connect(_on_host)
 	ip_row.add_child(host)
 
-	box.add_child(UI.primary_button("START", _on_join, 86, 56))
+	# START joins the server; VS BOTS plays alone against AI soldiers (5 v 5)
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 8)
+	box.add_child(buttons)
+	var start := UI.primary_button("START", _on_join, 86, 56)
+	start.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	start.size_flags_stretch_ratio = 1.6
+	buttons.add_child(start)
+	var practice := UI.button("VS BOTS", _on_practice, 86)
+	practice.add_theme_font_override("font", UI.FONT_TITLE)
+	practice.add_theme_font_size_override("font_size", 32)
+	practice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buttons.add_child(practice)
 
 
 func _pick_character(character: int) -> void:
@@ -392,6 +404,15 @@ func _on_join() -> void:
 func _on_host() -> void:
 	_save_fields()
 	Network.mode = Network.Mode.HOST
+	Network.bots = int(_parse_args().get("bots", "0"))
+	_start()
+
+
+## Playing alone: this device runs the match, the other 9 soldiers are bots.
+func _on_practice() -> void:
+	_save_fields()
+	Network.mode = Network.Mode.HOST
+	Network.bots = 9
 	_start()
 
 
