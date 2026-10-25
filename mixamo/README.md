@@ -53,6 +53,14 @@ python3 tools/meshy/make_team_texture.py assets/characters/skins/male.glb assets
 ```
 (برای زن همین‌ها با `female`.)
 
+بعدش (و هر بار که کاراکتر یا اسلحه عوض شد) دست‌ها رو روی اسلحه‌ها جا بنداز:
+```
+godot --headless --path . --script tools/fit_grips.gd
+```
+این `scripts/grip_data.gd` رو می‌سازه: جای قبضه توی کف دست راست، جای دست چپ زیر روکش لوله،
+و اینکه هر بند انگشت چقدر خم بشه تا روی بدنهٔ واقعی اسلحه بشینه (نه توش بره، نه توی هوا بمونه).
+انگشت‌های انیمیشن‌های Mixamo استفاده نمی‌شن؛ `scripts/hand_grip.gd` توی بازی خودش انگشت‌ها رو می‌بنده.
+
 ## انیمیشن‌هایی که هنوز لازمه (دفعهٔ بعد)
 
 ✅ گرفته شد: Rifle Idle، Rifle Aiming Idle، Firing Rifle، Death From The Front، Rifle Turn، Throw Grenade (درازکش).

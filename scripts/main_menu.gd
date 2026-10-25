@@ -19,6 +19,7 @@ const SettingsPanel := preload("res://scripts/ui/settings_panel.gd")
 const Characters := preload("res://scripts/characters.gd")
 const Weapons := preload("res://scripts/weapons.gd")
 const WeaponHolder := preload("res://scripts/weapon_holder.gd")
+const HandGrip := preload("res://scripts/hand_grip.gd")
 const BG := preload("res://assets/ui/lobby_bg.jpg")
 const PORTRAITS := [preload("res://assets/ui/portrait_male.png"), preload("res://assets/ui/portrait_female.png")]
 const GAME_SCENE := "res://scenes/game.tscn"
@@ -177,7 +178,7 @@ func _build_stage() -> void:
 
 ## Puts the player's character on the stage, holding the chosen gun.
 func _show_character() -> void:
-	var yaw := deg_to_rad(-25)
+	var yaw := deg_to_rad(35)   # gun across the body: both hands on it in view
 	if _soldier:
 		yaw = _soldier.rotation.y
 		_soldier.queue_free()
@@ -186,7 +187,11 @@ func _show_character() -> void:
 	_stage.add_child(_soldier)
 	var ap: AnimationPlayer = _soldier.find_child("AnimationPlayer", true, false)
 	var skeleton: Skeleton3D = _soldier.find_child("Skeleton3D", true, false)
-	WeaponHolder.new().setup(skeleton, Settings.weapon, ap)
+	var holder := WeaponHolder.new()
+	holder.setup(skeleton, Settings.weapon, ap)
+	var grip := HandGrip.new()
+	skeleton.add_child(grip)
+	grip.setup(holder, Settings.character, Settings.weapon)
 	ap.get_animation("idle").loop_mode = Animation.LOOP_LINEAR
 	ap.play("idle")
 	if _avatar:

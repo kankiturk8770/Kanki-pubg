@@ -9,6 +9,10 @@ const Weapons := preload("res://scripts/weapons.gd")
 
 ## End of the barrel, for muzzle flash, tracers and the shot sound.
 var muzzle := Node3D.new()
+## Gun relative to the right hand bone, and the left palm's spot under the
+## handguard in the gun's frame (scripts/hand_grip.gd uses both).
+var in_hand := Transform3D()
+var support_point := Vector3.ZERO
 
 var _skeleton: Skeleton3D
 var _right := -1
@@ -18,7 +22,6 @@ var _left_mid := -1
 var _grip := Vector3.ZERO
 var _support := Vector3.ZERO
 var _model: Node3D
-var _in_hand := Transform3D()   # gun relative to the right hand
 
 
 func setup(skeleton: Skeleton3D, weapon_id: String, anim: AnimationPlayer) -> void:
@@ -34,6 +37,7 @@ func setup(skeleton: Skeleton3D, weapon_id: String, anim: AnimationPlayer) -> vo
 	add_child(_model)
 	_grip = info["grip"] * k
 	_support = info["support"] * k
+	support_point = _support
 	muzzle.position = info["muzzle"] * k
 	add_child(muzzle)
 	# Placed in world space (skeletons can be scaled)
@@ -62,7 +66,7 @@ func calibrate() -> void:
 	var f1 := (left_palm - right_palm).normalized()
 	var f2 := (Vector3.UP - f1 * f1.dot(Vector3.UP)).normalized()
 	var basis := Basis(f1, f2, f1.cross(f2)) * gun_axes.transposed()
-	_in_hand = right.orthonormalized().affine_inverse() * Transform3D(basis, right_palm - basis * _grip)
+	in_hand = right.orthonormalized().affine_inverse() * Transform3D(basis, right_palm - basis * _grip)
 
 
 func _palm(hand: int, middle: int) -> Vector3:
@@ -77,4 +81,4 @@ func _follow() -> void:
 	if not is_inside_tree():
 		return
 	var right := _skeleton.global_transform * _skeleton.get_bone_global_pose(_right)
-	global_transform = right.orthonormalized() * _in_hand
+	global_transform = right.orthonormalized() * in_hand

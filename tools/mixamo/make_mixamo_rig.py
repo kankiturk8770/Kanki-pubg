@@ -117,6 +117,21 @@ def find_fingers(co, hand_w, wrist, elbow, side):
     for name, c in zip(FINGERS, named):
         base, tip = Vector(c["base"]), Vector(c["tip"])
         out[name] = [base.lerp(tip, f) for f in (0.0, 0.45, 0.75, 1.0)]
+    # Only the outer half of the thumb is in its cluster (its root is in the
+    # palm), so its joints are placed like a real thumb's: the root bone
+    # starts near the wrist on the thumb side, then knuckle, joint, tip
+    # (proportions of the hand's length)
+    tip, base = Vector(thumb["tip"]), Vector(thumb["base"])
+    out_dir = (tip - base).normalized()
+    side_dir = Vector(lat) * (1.0 if thumb["lat"] > 0 else -1.0)
+    finger_depth = np.mean([c["depth"] for c in others])
+    palm_dir = Vector(nrm) * (1.0 if thumb["depth"] > finger_depth else -1.0)
+    joint = tip - out_dir * reach * 0.15
+    knuckle = joint - out_dir * reach * 0.17
+    root = Vector(wrist) + Vector(a) * reach * 0.12 + side_dir * reach * 0.07 + palm_dir * reach * 0.04
+    out["Thumb"] = [root, knuckle, joint, tip]
+    log(side, "thumb bones %.3f %.3f %.3f m" % ((knuckle - root).length, (joint - knuckle).length,
+                                                (tip - joint).length))
     return out, a
 
 

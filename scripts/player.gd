@@ -14,6 +14,7 @@ const Characters := preload("res://scripts/characters.gd")
 const Weapons := preload("res://scripts/weapons.gd")
 const WeaponPose := preload("res://scripts/weapon_pose.gd")
 const WeaponHolder := preload("res://scripts/weapon_holder.gd")
+const HandGrip := preload("res://scripts/hand_grip.gd")
 const LOOPING_ANIMS := ["idle", "run", "crouch_idle", "crouch_walk", "jump", "walk_back",
 		"strafe_left", "strafe_right", "rifle_low", "rifle_aim", "fire"]
 ## Body clips whose arms don't hold the rifle: the upper body comes from
@@ -96,6 +97,7 @@ var model: Node3D
 var anim: AnimationPlayer
 var aim_mod: SkeletonModifier3D
 var weapon_pose: SkeletonModifier3D
+var hand_grip: SkeletonModifier3D
 var _layer_time := 0.0   # clock for looping upper-body clips (aim, fire)
 var muzzle: Node3D
 var flash: MeshInstance3D
@@ -174,6 +176,10 @@ func _build_body() -> void:
 	skeleton.add_child(aim_mod)
 	var holder := WeaponHolder.new()
 	holder.setup(skeleton, weapon, anim)
+	# Fingers round the gun, left hand on the handguard (last modifier)
+	hand_grip = HandGrip.new()
+	skeleton.add_child(hand_grip)
+	hand_grip.setup(holder, character, weapon)
 	muzzle = holder.muzzle
 
 	flash = MeshInstance3D.new()
@@ -461,6 +467,9 @@ func _animate(delta: float) -> void:
 		weapon_pose.clip = anim.get_animation(layer)
 		weapon_pose.time = t
 	weapon_pose.influence = lerpf(weapon_pose.influence, 1.0 if layer != "" else 0.0, 1.0 - exp(-12.0 * delta))
+	# Left hand leaves the handguard to change the magazine, and when dying
+	var left_on_gun := 0.0 if dead or reloading else 1.0
+	hand_grip.left_ik = lerpf(hand_grip.left_ik, left_on_gun, 1.0 - exp(-10.0 * delta))
 
 
 # ---------------------------------------------------------------- actions
