@@ -76,3 +76,12 @@ python3 tools/meshy/make_team_texture.py assets/characters/skins/male.glb assets
 4. روی نوار آدرس بزن، بنویس `kanki` و **پیشنهادی که ستاره (بوکمارک) داره** رو بزن.
 5. کادر زرد میاد. اگه کروم پرسید «چند فایل دانلود بشه؟» ← **Allow**. صفحه رو روشن نگه دار تا تموم بشه (STOP برای توقف).
 6. فایل‌های دانلودشده رو بفرست.
+
+### اگه کادر زرد نیومد
+
+- **تست:** یه بوکمارک دیگه با URL `javascript:alert('Kanki OK')` (فایل `test_bookmark.txt`) بساز و روی Mixamo همون‌طوری اجراش کن.
+  اگه پیغام نیومد، کروم روی این سایت بوکمارک‌های اسکریپتی رو اجرا نمی‌کنه.
+- **راه مطمئن‌تر: Firefox + Violentmonkey** (روی اندروید کار می‌کنه):
+  1. Firefox رو از Play Store نصب کن ← ⋮ ← **Extensions** ← **Violentmonkey** رو اضافه کن.
+  2. توی Firefox فایل `mixamo/kanki_mixamo.user.js` رو از GitHub باز کن و دکمهٔ **Raw** رو بزن ← Violentmonkey صفحهٔ نصب رو باز می‌کنه ← **Install**.
+  3. `mixamo.com` (Desktop site) ← تب Animations ← MALE_UPLOAD ← پایین-راست دکمهٔ زرد **▶ KANKI** رو بزن.
