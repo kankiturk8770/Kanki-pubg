@@ -6,9 +6,10 @@ extends SkeletonModifier3D
 ## 2. Fingers: every joint bends around its real bending axis (worked out
 ##    from the hand's shape in the rest pose), as far as needed to rest on
 ##    the gun's surface.
-## How far each finger bends, where the left hand holds and where the gun
-## sits in the right palm are fitted to the real gun and hand meshes by
-## tools/fit_grips.gd (scripts/grip_data.gd).
+## How far each finger bends, where the left hand holds, where the gun sits
+## in the right palm and how the right wrist turns to line the hand up with
+## the grip are fitted to the real gun and hand meshes by tools/fit_grips.gd
+## (scripts/grip_data.gd).
 ## Add it as the LAST child of the Skeleton3D (after the other modifiers),
 ## then call setup() with the character's WeaponHolder.
 
@@ -40,6 +41,7 @@ var _holder: Node3D
 var _joints: Array = []
 var _angles := PackedFloat32Array()   # radians, one per joint
 var _left_in_gun := Transform3D()     # left hand bone in the gun's frame
+var _wrist := Quaternion()            # right hand turned at the wrist to fit the grip
 var _arm := -1
 var _forearm := -1
 var _hand := -1
@@ -127,7 +129,10 @@ func setup(holder: Node3D, character: int, weapon_id: String) -> void:
 	_joints = finger_joints(skeleton)
 	var fit: Dictionary = GripData.FITS.get("%d/%s" % [character, weapon_id], {})
 	if fit and (fit["curl"] as Array).size() == _joints.size():
-		holder.in_hand = holder.in_hand * Transform3D(Basis(), fit["shift"])
+		# The gun stays where the animation holds it; the hand turns round it
+		_wrist = fit.get("wrist", Quaternion())
+		holder.in_hand = Transform3D(Basis(_wrist.inverse()), Vector3.ZERO) * holder.in_hand \
+				* Transform3D(Basis(), fit["shift"])
 		_left_in_gun = fit["left"]
 		for deg in fit["curl"]:
 			_angles.append(deg_to_rad(deg))
@@ -152,6 +157,7 @@ func _process_modification() -> void:
 	var skeleton := get_skeleton()
 	if skeleton == null or _holder == null or _joints.is_empty():
 		return
+	skeleton.set_bone_pose_rotation(_right_hand, skeleton.get_bone_pose_rotation(_right_hand) * _wrist)
 	if left_ik > 0.01:
 		_left_hand_to_gun(skeleton)
 	for i in _joints.size():

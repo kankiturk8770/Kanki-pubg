@@ -37,6 +37,10 @@ const TRIGGER_BEND := [60.0, 75.0, 45.0]
 ## Finger bends tried, every so many degrees (search, final)
 const SEARCH_STEP := 15.0
 const STEP := 5.0
+## How far the right wrist may turn to line the hand up with the grip
+## (degrees): sideways in the palm's plane, and bending
+const WRIST_SIDEWAYS := [-20.0, -10.0, 0.0, 10.0, 20.0]
+const WRIST_BENDS := [-10.0, 0.0, 10.0, 20.0, 30.0, 40.0]
 ## Skin is soft: how deep the gun may press into the palm and the fingers
 const PALM_GIVE := 0.008
 const FINGER_GIVE := 0.003
@@ -71,7 +75,8 @@ func _init() -> void:
 	get_root().add_child(body)
 	var text := "extends RefCounted\n## Made by tools/fit_grips.gd: run it again after changing a character or a\n" \
 			+ "## gun model. Per \"character/gun\": `shift` moves the gun in the right palm\n" \
-			+ "## (gun's frame), `left` = left hand bone in the gun's frame, `curl` = bend\n" \
+			+ "## (gun's frame), `wrist` turns the right hand at the wrist (the gun stays),\n" \
+			+ "## `left` = left hand bone in the gun's frame, `curl` = bend\n" \
 			+ "## of each finger joint in degrees (order of HandGrip.finger_joints()).\n" \
 			+ "const FITS := {\n"
 	var only := OS.get_cmdline_user_args()
@@ -117,8 +122,10 @@ func _init() -> void:
 		model.free()
 	for key in fits:
 		var fit: Dictionary = fits[key]
-		text += "\t\"%s\": {\n\t\t\"shift\": %s,\n\t\t\"left\": %s,\n\t\t\"curl\": %s,\n\t},\n" % [
-			key, _vec(fit["shift"]), _xform(fit["left"]), _list(fit["curl"])]
+		var q: Quaternion = fit.get("wrist", Quaternion())
+		text += "\t\"%s\": {\n\t\t\"shift\": %s,\n\t\t\"wrist\": Quaternion(%.5f, %.5f, %.5f, %.5f),\n" % [
+			key, _vec(fit["shift"]), q.x, q.y, q.z, q.w]
+		text += "\t\t\"left\": %s,\n\t\t\"curl\": %s,\n\t},\n" % [_xform(fit["left"]), _list(fit["curl"])]
 	text += "}\n"
 	var file := FileAccess.open(OUT, FileAccess.WRITE)
 	file.store_string(text)
@@ -127,44 +134,52 @@ func _init() -> void:
 
 
 func _fit(hands: Dictionary, in_hand: Transform3D, grip: Vector3, support: Vector3, arm: Array) -> Dictionary:
-	# Right hand (the gun keeps its angle in the hand, which the animations
-	# aim with; only where it sits in the hand changes): the pistol grip lies
-	# in the palm, its front by the knuckles, the middle finger a third of
-	# the way down it. Then small moves around that, keeping the one where
-	# the palm does not go into the gun and the fingers close round it best.
+	# Right hand. The gun stays where the animation holds it (that is where
+	# it aims); the wrist may bend a little so the hand lines up with the
+	# grip. The pistol grip lies in the palm, its front by the knuckles, the
+	# middle finger a third of the way down it; then small moves around
+	# that, keeping the one where the palm does not go into the gun and the
+	# fingers close round it best.
 	var right: Dictionary = hands["Right"]
-	var axes: Basis = in_hand.basis.inverse() * (right["frame"]["axes"] as Basis)   # hand axes, gun frame
+	var frame_axes: Basis = right["frame"]["axes"]   # hand axes, hand bone's space
+	var palm_centre: Vector3 = right["frame"]["centre"]
 	var levels := _grip_levels(grip)
 	if levels.is_empty():
 		push_error("pistol grip not found")
 		return {"curl": [], "report": "no grip"}
 	var level: Dictionary = levels[int(levels.size() * 0.35)]
 	var mid: Vector3 = level["centre"]
-	var out_n := 0.0
-	var out_a := 0.0
-	for q in level["points"]:
-		out_n = maxf(out_n, (q - mid).dot(axes.y))
-		out_a = maxf(out_a, (q - mid).dot(axes.x))
-	var palm: Vector3 = mid - axes.y * (out_n + right["palm_depth"] - PALM_GIVE) \
-			+ axes.x * (out_a + 0.005 - right["knuckle"])
-	var start: Vector3 = palm - in_hand.affine_inverse() * (right["frame"]["centre"] as Vector3)
 	var best_right := {"score": -INF}
-	for out in [0.0, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04]:
-		for slide in [-0.01, 0.0, 0.01]:
-			for reach in [-0.01, 0.0, 0.01]:
-				var move: Vector3 = start - axes.y * out + axes.z * slide + axes.x * reach
-				var c := _try_right(right, in_hand, move, SEARCH_STEP)
-				c["score"] -= out * 200.0 + (absf(slide) + absf(reach)) * 150.0
-				if c["score"] > best_right["score"]:
-					best_right = c
+	for sideways in WRIST_SIDEWAYS:
+		for bend in WRIST_BENDS:
+			var wrist := Basis(frame_axes.y, deg_to_rad(sideways)) * Basis(frame_axes.z, deg_to_rad(bend))
+			var axes: Basis = in_hand.basis.inverse() * wrist * frame_axes   # hand axes, gun frame
+			var out_n := 0.0
+			var out_a := 0.0
+			for q in level["points"]:
+				out_n = maxf(out_n, (q - mid).dot(axes.y))
+				out_a = maxf(out_a, (q - mid).dot(axes.x))
+			var palm: Vector3 = mid - axes.y * (out_n + right["palm_depth"] - PALM_GIVE) \
+					+ axes.x * (out_a + 0.005 - right["knuckle"])
+			var start: Vector3 = palm - in_hand.affine_inverse() * (wrist * palm_centre)
+			for out in [0.0, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04]:
+				for slide in [-0.01, 0.0, 0.01]:
+					for reach in [-0.02, -0.01, 0.0, 0.01]:
+						var move: Vector3 = start - axes.y * out + axes.z * slide + axes.x * reach
+						var c := _try_right(right, in_hand, wrist, move, SEARCH_STEP, mid)
+						c["score"] -= out * 200.0 + (absf(slide) + absf(reach)) * 150.0 \
+								+ (absf(sideways) + absf(bend)) * 0.15
+						if c["score"] > best_right["score"]:
+							best_right = c
 	if not best_right.has("move"):
 		push_error("right hand does not fit the grip")
 		return {"curl": [], "report": "right hand does not fit"}
-	best_right = _try_right(right, in_hand, best_right["move"], STEP)
+	best_right = _try_right(right, in_hand, best_right["wrist"], best_right["move"], STEP, mid)
 	var shift: Vector3 = -(best_right["move"] as Vector3)
+	var wrist_turn: Basis = best_right["wrist"]
 	var fingers := {"Right": best_right["fingers"], "Left": {}}
-	var report := "grip %d levels, shift %.1fcm  right %s" % [levels.size(), shift.length() * 100.0,
-			_touches(fingers["Right"])]
+	var report := "grip %d levels, shift %.1fcm wrist %.0f°  right %s" % [levels.size(), shift.length() * 100.0,
+			rad_to_deg(wrist_turn.get_rotation_quaternion().get_angle()), _touches(fingers["Right"])]
 
 	# Left hand: try many ways of holding the handguard, keep the best
 	var shifted := []
@@ -195,13 +210,17 @@ func _fit(hands: Dictionary, in_hand: Transform3D, grip: Vector3, support: Vecto
 	var curl := []
 	for j in _joints:
 		curl.append(rad_to_deg(fingers[j["side"]][j["finger"]]["angles"][j["joint"]]))
-	return {"shift": shift, "left": best["hand"], "curl": curl, "report": report}
+	return {"shift": shift, "wrist": wrist_turn.get_rotation_quaternion(), "left": best["hand"], "curl": curl,
+			"report": report}
 
 
-## The right hand moved by `move` (gun's frame) from where the animation
-## holds it: how well it holds the grip (-INF: the palm is in the gun).
-func _try_right(hand: Dictionary, in_hand: Transform3D, move: Vector3, step: float) -> Dictionary:
-	var placed := Transform3D(Basis(), move) * in_hand.affine_inverse()
+## The right hand turned at the wrist by `wrist` and moved by `move` (gun's
+## frame) from where the animation holds it: how well it holds the grip
+## whose middle is `grip` (-INF: the palm is in the gun). Fingers should
+## not only touch it but reach round to its far (left) side.
+func _try_right(hand: Dictionary, in_hand: Transform3D, wrist: Basis, move: Vector3, step: float,
+		grip: Vector3) -> Dictionary:
+	var placed := Transform3D(Basis(), move) * in_hand.affine_inverse() * Transform3D(wrist, Vector3.ZERO)
 	if _part_hits(hand["palm"], placed, PALM_GIVE):
 		return {"score": -INF}
 	var score := 0.0
@@ -215,7 +234,9 @@ func _try_right(hand: Dictionary, in_hand: Transform3D, move: Vector3, step: flo
 		elif r["touch"] >= 0:
 			score += 10.0 if finger in ["Middle", "Ring", "Pinky"] else 5.0
 			score += r["bend"] / 40.0   # wrapped further round the grip
-	return {"score": score, "move": move, "fingers": fingers}
+		if finger != "Index" and r["touch"] != -2 and r["tip"].z > grip.z:
+			score += 4.0 if finger == "Thumb" else 8.0
+	return {"score": score, "move": move, "wrist": wrist, "fingers": fingers}
 
 
 ## The pistol grip, slice by slice from under `start` down to its bottom
