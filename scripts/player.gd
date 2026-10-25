@@ -728,6 +728,8 @@ func _shot_effects(end: Vector3) -> void:
 	shot_audio.play()
 	flash.visible = true
 	flash.rotation.z = randf() * TAU
+	# small when looking down our own sight, or it would hide the target
+	flash.scale = Vector3.ONE * (0.25 if controlled and holder.ads > 0.5 else 1.0)
 	get_tree().create_timer(0.04).timeout.connect(func(): flash.visible = false)
 
 

@@ -28,6 +28,7 @@ var _stuck_side := 1.0
 
 func _init() -> void:
 	await process_frame
+	seed(7)   # same spawns every time
 	var settings = get_root().get_node("Settings")
 	settings.show_fps = false
 	settings.quality = settings.Quality.HIGH
@@ -69,7 +70,7 @@ func _init() -> void:
 	_touch = _game.hud.touch
 	for i in TEAMMATES:
 		_game.add_bot(_me.team)
-	_look = Vector2(_me.rotation.y, 0.0)
+	_look = Vector2(_open_direction(), 0.0)
 	_steer = true
 	await _wait(1.0)
 	await _show_moves()
@@ -143,6 +144,27 @@ func _sprint_lock() -> void:
 	e.queue_redraw()
 	await _wait(0.3)
 	e.touch_up()
+
+
+## The way (near the enemy's side) with the most open ground ahead, so the
+## moves are not shown against a wall.
+func _open_direction() -> float:
+	var best := _me.rotation.y
+	var best_room := 0.0
+	var space := _me.get_world_3d().direct_space_state
+	for i in range(-6, 7):
+		var yaw := _me.rotation.y + i * 0.12
+		var ahead := Vector3(-sin(yaw), 0, -cos(yaw))
+		var from := _me.global_position + Vector3(0, 1.0, 0)
+		var q := PhysicsRayQueryParameters3D.create(from, from + ahead * 30.0)
+		q.exclude = [_me.get_rid()]
+		var hit := space.intersect_ray(q)
+		var room: float = from.distance_to(hit.position) if hit else 30.0
+		room -= absf(i) * 0.4   # rather straight ahead
+		if room > best_room:
+			best_room = room
+			best = yaw
+	return best
 
 
 ## Every frame: turn the camera smoothly; in the fight, play like a person.
