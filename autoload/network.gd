@@ -15,6 +15,8 @@ var port := DEFAULT_PORT
 var player_name := "Player"
 var character := 0  # scripts/characters.gd: MALE / FEMALE
 var weapon := "m416"  # scripts/weapons.gd
+## AI soldiers the server adds when the match starts (practice without other players).
+var bots := 0
 
 ## Shown in the main menu after we get kicked back there.
 var last_error := ""

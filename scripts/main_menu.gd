@@ -11,6 +11,7 @@ extends Control
 ##   --character=1       character for --join (0 male, 1 female)
 ##   --weapon=akm        weapon for --join (m416, akm, ump45)
 ##   --lobby             skip the splash and login screens
+##   --bots=5            AI soldiers in the match (HOST (LAN) or --server)
 
 const UI := preload("res://scripts/ui/ui_theme.gd")
 const TouchControls := preload("res://scripts/hud/touch_controls.gd")
@@ -41,6 +42,8 @@ func _ready() -> void:
 		Network.port = int(opts["port"])
 	else:
 		Network.port = Settings.server_port
+	if opts.has("bots"):
+		Network.bots = int(opts["bots"])
 
 	if opts.has("join"):
 		Network.mode = Network.Mode.CLIENT

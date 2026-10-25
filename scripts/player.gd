@@ -6,6 +6,7 @@ extends CharacterBody3D
 ##     Position/rotation are sent to everyone by the MultiplayerSynchronizer.
 ##   - The server decides hits, damage, deaths and respawns, so a player
 ##     can't just say "I hit you" - the server checks the shot itself.
+##   - Bots (AI soldiers, see game.gd add_bot) are moved by the server.
 
 const UI := preload("res://scripts/ui/ui_theme.gd")
 const Fx := preload("res://scripts/fx.gd")
@@ -52,7 +53,9 @@ var team := 0
 var character := Characters.MALE
 var weapon := "m416"
 var weapon_info: Dictionary   # scripts/weapons.gd: damage, fire rate...
-var is_local := false
+var is_local := false        # the player using this device
+var is_bot := false          # an AI soldier
+var controlled := false      # this device moves it (its owner, or the server for bots)
 var game: Node3D
 
 # Sent from the owner to everyone (MultiplayerSynchronizer)
@@ -83,8 +86,15 @@ var _reload_left := 0.0
 var _fire_cooldown := 0.0
 var _want_jump := false
 var _mouse_delta := Vector2.ZERO
-var _bot := false  # "--bot" test mode: plays by itself (for testing the server)
+var _bot := false  # the AI plays it: bots, or the local player in "--bot" test mode
+var _bot_move := Vector2.ZERO  # AI's joystick
+var _bot_fire := false
+var _bot_seen := 0.0           # how long the target has been in sight
+var _bot_aim_error := Vector2.ZERO
+var _bot_error_left := 0.0
+var _bot_burst := 0.0
 var _bot_sidestep := 0.0
+var _bot_strafe_left := 0.0
 var _bot_side := 1.0
 
 var _server_last_fire := 0.0
@@ -118,7 +128,10 @@ func setup(data: Dictionary, local_id: int, game_ref: Node3D) -> void:
 	character = data.get("character", Characters.MALE)
 	weapon = data.get("weapon", "m416")
 	weapon_info = Weapons.get_info(weapon)
-	is_local = peer_id == local_id
+	is_bot = data.get("bot", false)
+	is_local = peer_id == local_id and not is_bot
+	var owner_id: int = 1 if is_bot else peer_id
+	controlled = owner_id == local_id
 	position = data["pos"]
 	rotation.y = _spawn_yaw()
 	net_position = position
@@ -131,10 +144,10 @@ func setup(data: Dictionary, local_id: int, game_ref: Node3D) -> void:
 	collision_mask = 1 | 2
 	_build_body()
 	_build_sync()
-	if is_local:
+	if controlled:
 		_build_camera()
-		_bot = "--bot" in OS.get_cmdline_user_args()
-	set_multiplayer_authority(peer_id)
+		_bot = is_bot or "--bot" in OS.get_cmdline_user_args()
+	set_multiplayer_authority(owner_id)
 
 
 func _ready() -> void:
@@ -253,16 +266,21 @@ func _build_camera() -> void:
 # ---------------------------------------------------------------- update
 
 func _physics_process(delta: float) -> void:
-	if is_local:
+	if controlled:
 		_owner_update(delta)
 	else:
 		_remote_update(delta)
+	if not is_local:
+		var me = game.local_player
+		name_tag.visible = not dead and me != null and me.team == team
 	_animate(delta)
 
 
 func _owner_update(delta: float) -> void:
-	var hud = game.hud
+	var hud = game.hud if is_local else null
 	var can_act: bool = not dead and game.is_playing()
+	if _bot and can_act:
+		_bot_think(delta)
 	var menu_open: bool = hud != null and hud.menu_open
 	var sens_key := scope if aiming else "tpp"
 
@@ -272,7 +290,7 @@ func _owner_update(delta: float) -> void:
 		var screen_w := get_viewport().get_visible_rect().size.x
 		look += hud.take_look_delta() / screen_w * PI * Settings.drag_factor(sens_key)
 	var gyro_k := Settings.gyro_factor(sens_key)
-	if gyro_k > 0.0 and Settings.use_touch_controls() and not menu_open:
+	if is_local and gyro_k > 0.0 and Settings.use_touch_controls() and not menu_open:
 		var g := Input.get_gyroscope()
 		var gx := -g.y * (-1.0 if Settings.gyro_invert_x else 1.0)
 		var gy := -g.x * (-1.0 if Settings.gyro_invert_y else 1.0)
@@ -288,14 +306,17 @@ func _owner_update(delta: float) -> void:
 	var input := Vector2.ZERO
 	var stick := Vector2.ZERO
 	if can_act:
-		input = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+		if is_local:
+			input = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 		if hud:
 			stick = hud.get_move()
 			input += stick
+		if _bot:
+			input += _bot_move
 		input = input.limit_length(1.0)
 
 	# Sprint: push the joystick all the way forward (or hold Shift)
-	var wants_sprint := Input.is_action_pressed("sprint") and input.y < -0.5
+	var wants_sprint := is_local and Input.is_action_pressed("sprint") and input.y < -0.5
 	if Settings.auto_sprint and stick.length() > 0.95 and stick.y < -0.85:
 		_sprint_hold += delta
 	else:
@@ -333,7 +354,7 @@ func _owner_update(delta: float) -> void:
 	# Where the body faces: towards the camera when aiming/shooting/peeking,
 	# otherwise it turns smoothly towards the direction you run.
 	_since_fire += delta
-	var face_camera := aiming or peek != 0 or _since_fire < FACE_CAMERA_AFTER_FIRE
+	var face_camera := aiming or peek != 0 or _since_fire < FACE_CAMERA_AFTER_FIRE or _bot
 	var body_target := body_yaw
 	if face_camera:
 		body_target = rotation.y
@@ -349,11 +370,11 @@ func _owner_update(delta: float) -> void:
 		if _reload_left <= 0:
 			reloading = false
 			ammo = MAG_SIZE
-	var firing := Input.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	var firing := is_local and Input.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	if hud and hud.is_firing():
 		firing = true
-	if _bot and can_act:
-		firing = _bot_think()
+	if _bot and _bot_fire:
+		firing = true
 	if firing and can_act and not reloading and _fire_cooldown <= 0:
 		if ammo > 0:
 			_shoot()
@@ -389,8 +410,6 @@ func _remote_update(delta: float) -> void:
 	pitch = lerpf(pitch, net_pitch, t)
 	if (capsule.height < STAND_HEIGHT) != crouching:
 		_apply_crouch()
-	var me = game.local_player
-	name_tag.visible = me != null and me.team == team
 
 
 func _animate(delta: float) -> void:
@@ -413,7 +432,7 @@ func _animate(delta: float) -> void:
 	_lean = lerpf(_lean, 0.0 if dead else peek * PEEK_ANGLE, 1.0 - exp(-12.0 * delta))
 	aim_mod.lean = _lean
 
-	var in_air := not is_on_floor() if is_local else absf(vertical) > 1.5
+	var in_air := not is_on_floor() if controlled else absf(vertical) > 1.5
 	var want := "idle"
 	var rate := 1.0
 	# Movement direction relative to the body: forward, backward or sideways
@@ -572,35 +591,68 @@ func _shoot() -> void:
 	rotation.y += randf_range(-0.004, 0.004)
 
 
-## Test bot: turn towards the nearest enemy, walk closer, shoot if visible.
-func _bot_think() -> bool:
+## AI: picks the nearest enemy and turns towards it like a person (not in
+## an instant, the aim wanders a little and settles), walks closer while it
+## can't see it, and once it has seen it for a moment shoots in short
+## bursts, stepping from side to side. Sets the AI's joystick and trigger.
+func _bot_think(delta: float) -> void:
+	_bot_move = Vector2.ZERO
+	_bot_fire = false
 	var target: Node3D = null
 	for p in get_parent().get_children():
 		if p != self and p.team != team and not p.dead:
 			if target == null or global_position.distance_to(p.global_position) < global_position.distance_to(target.global_position):
 				target = p
 	if target == null:
-		return false
-	var to := target.global_position + Vector3(0, 1.2, 0) - camera.global_position
-	rotation.y = atan2(-to.x, -to.z)
-	body_yaw = rotation.y
-	pitch = atan2(to.y, Vector2(to.x, to.z).length())
-	var q := PhysicsRayQueryParameters3D.create(camera.global_position, target.global_position + Vector3(0, 1.2, 0))
+		_bot_seen = 0.0
+		return
+	var aim_at: Vector3 = target.global_position + Vector3(0, 0.8 if target.crouching else 1.15, 0)
+	var eye := global_position + Vector3(0, 1.5, 0)
+	var q := PhysicsRayQueryParameters3D.create(eye, aim_at)
 	q.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	var visible_target: bool = hit and hit.collider == target
-	if not visible_target or to.length() > 18.0:
-		var step := Vector3(to.x, 0, to.z).normalized()
-		_bot_sidestep -= get_physics_process_delta_time()
+	var in_sight: bool = hit and hit.collider == target
+	_bot_seen = _bot_seen + delta if in_sight else 0.0
+
+	# Aim (from the camera, where the shots start)
+	_bot_error_left -= delta
+	if _bot_error_left <= 0.0:
+		_bot_error_left = randf_range(0.3, 0.7)
+		var shaky := clampf(1.2 - _bot_seen, 0.25, 1.0)
+		_bot_aim_error = Vector2(randf_range(-1.0, 1.0), randf_range(-0.5, 0.5)) * deg_to_rad(5.0) * shaky
+	var to := aim_at - camera.global_position
+	var want_yaw := atan2(-to.x, -to.z) + _bot_aim_error.x
+	var want_pitch := atan2(to.y, Vector2(to.x, to.z).length()) + _bot_aim_error.y
+	var turn := 1.0 - exp(-(7.0 if in_sight else 4.0) * delta)
+	rotation.y = lerp_angle(rotation.y, want_yaw, turn)
+	pitch = lerpf(pitch, want_pitch, turn)
+
+	# Move: closer while out of sight, side to side while shooting
+	var flat := Vector3(to.x, 0, to.z)
+	var go := Vector3.ZERO
+	if not in_sight or flat.length() > 20.0:
+		go = flat.normalized()
+		_bot_sidestep -= delta
 		if is_on_wall() and _bot_sidestep <= 0:
 			_bot_sidestep = randf_range(0.8, 2.0)
 			_bot_side = [-1.0, 1.0].pick_random()
 		if _bot_sidestep > 0:
-			step = step.rotated(Vector3.UP, PI / 2 * _bot_side)
-		velocity.x = step.x * WALK_SPEED
-		velocity.z = step.z * WALK_SPEED
-		move_and_slide()
-	return visible_target
+			go = go.rotated(Vector3.UP, PI / 2 * _bot_side)
+	else:
+		_bot_strafe_left -= delta
+		if _bot_strafe_left <= 0:
+			_bot_strafe_left = randf_range(0.8, 1.8)
+			_bot_side = [-1.0, 0.0, 1.0].pick_random()
+		go = flat.normalized().rotated(Vector3.UP, PI / 2) * _bot_side * 0.6
+	var local := Basis(Vector3.UP, rotation.y).inverse() * go
+	_bot_move = Vector2(local.x, local.z)
+
+	# Short bursts, after a moment to react, when the aim is close
+	_bot_burst -= delta
+	if _bot_burst < -0.45:
+		_bot_burst = randf_range(0.35, 0.8)
+	_bot_fire = in_sight and _bot_seen > 0.55 and _bot_burst > 0.0 \
+			and absf(angle_difference(rotation.y, want_yaw)) < 0.12
 
 
 func _apply_spread(dir: Vector3, spread: float) -> Vector3:
@@ -623,7 +675,7 @@ func _shot_effects(end: Vector3) -> void:
 
 @rpc("any_peer", "call_local", "reliable")
 func server_fire(origin: Vector3, dir: Vector3) -> void:
-	if not multiplayer.is_server() or multiplayer.get_remote_sender_id() != peer_id:
+	if not multiplayer.is_server() or multiplayer.get_remote_sender_id() != get_multiplayer_authority():
 		return
 	if dead or not game.is_playing():
 		return
@@ -646,7 +698,8 @@ func server_fire(origin: Vector3, dir: Vector3) -> void:
 		if target.has_method("server_take_damage") and target.team != team and not target.dead:
 			var head_hit: bool = end.y > target.global_position.y + target.capsule.height - 0.35
 			target.server_take_damage(weapon_info["head_damage"] if head_hit else weapon_info["body_damage"], peer_id, head_hit)
-			hit_confirm.rpc_id(peer_id, head_hit)
+			if not is_bot:
+				hit_confirm.rpc_id(peer_id, head_hit)
 	fx_shot.rpc(end)
 
 
@@ -680,7 +733,7 @@ func _from_server() -> bool:
 
 @rpc("any_peer", "call_local", "unreliable")
 func fx_shot(end: Vector3) -> void:
-	if not _from_server() or is_local or Network.is_dedicated():
+	if not _from_server() or controlled or Network.is_dedicated():
 		return
 	_shot_effects(end)
 
@@ -731,7 +784,7 @@ func do_respawn(pos: Vector3, yaw: float) -> void:
 	net_yaw = yaw
 	body_yaw = yaw
 	net_body_yaw = yaw
-	if is_local:
+	if controlled:
 		peek = 0
 		sprinting = false
 		pitch = 0

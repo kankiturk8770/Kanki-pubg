@@ -317,11 +317,13 @@ func _process(delta: float) -> void:
 		_next_match_left = maxf(0.0, _next_match_left - delta)
 		_sub_label.text = "Next match in %d" % ceil(_next_match_left)
 	elif _respawn_left >= 0:
-		_respawn_left -= delta
+		# Stays at 0 until the server's respawn arrives (it can come a little
+		# after our countdown), so the message is cleared when we are back
+		_respawn_left = maxf(0.0, _respawn_left - delta)
 		if player and player.dead:
 			_center_label.add_theme_color_override("font_color", Color("ff6b5e"))
 			_center_label.text = "ELIMINATED"
-			_sub_label.text = "Respawning in %d" % ceil(maxf(_respawn_left, 0.0))
+			_sub_label.text = "Respawning in %d" % ceil(_respawn_left) if _respawn_left > 0 else "Respawning..."
 		else:
 			_respawn_left = -1
 			_center_label.text = ""

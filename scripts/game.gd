@@ -12,6 +12,8 @@ const KILL_TARGET := 40
 const MATCH_TIME := 600.0
 const RESPAWN_DELAY := 3.0
 const NEXT_MATCH_DELAY := 10.0
+## Names for AI soldiers (bots)
+const BOT_NAMES := ["Arash", "Kaveh", "Sina", "Dara", "Nima", "Reza", "Omid", "Babak", "Navid", "Saman"]
 
 enum State { PLAYING, ENDED }
 
@@ -28,6 +30,7 @@ var info := {}  # peer id -> {"name", "team", "kills", "deaths"}
 
 var _sync_timer := 0.0
 var _leaving := false
+var _bots := 0
 
 
 func _ready() -> void:
@@ -60,6 +63,8 @@ func _ready() -> void:
 		Accounts.start_server(Network.port)
 		if Network.mode == Network.Mode.HOST:
 			_add_player(1, Network.player_name, Network.character, Network.weapon)
+		for i in Network.bots:
+			add_bot()
 	else:
 		multiplayer.connected_to_server.connect(_on_connected)
 		multiplayer.connection_failed.connect(_back_to_menu.bind(
@@ -124,16 +129,28 @@ func register_player(player_name: String, character: int, weapon: String) -> voi
 		_add_player(id, player_name, character, weapon)
 
 
-func _add_player(id: int, player_name: String, character: int, weapon: String) -> void:
+## An AI soldier run by the server (practice, or to fill the teams).
+## team -1: the smaller team. Bots have negative ids (real peers never do).
+func add_bot(team := -1) -> void:
+	if not multiplayer.is_server():
+		return
+	_bots += 1
+	_add_player(-_bots, BOT_NAMES[(_bots - 1) % BOT_NAMES.size()], randi() % 2, Weapons.ORDER.pick_random(),
+			true, team)
+
+
+func _add_player(id: int, player_name: String, character: int, weapon: String, bot := false,
+		team := -1) -> void:
 	if not Weapons.LIST.has(weapon):
 		weapon = "m416"
 	player_name = player_name.strip_edges().left(16)
 	if player_name == "":
 		player_name = "Player%d" % (info.size() + 1)
-	var team := 0 if _team_size(0) <= _team_size(1) else 1
+	if team < 0:
+		team = 0 if _team_size(0) <= _team_size(1) else 1
 	info[id] = {"name": player_name, "team": team, "kills": 0, "deaths": 0}
 	spawner.spawn({"id": id, "name": player_name, "team": team, "character": character,
-			"weapon": weapon, "pos": get_spawn_point(team)})
+			"weapon": weapon, "pos": get_spawn_point(team), "bot": bot})
 	print("[server] %s joined team %s (%d players)" % [player_name, ["BLUE", "RED"][team], info.size()])
 	_broadcast_info()
 	_broadcast_match()
