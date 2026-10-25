@@ -15,7 +15,7 @@ const Weapons := preload("res://scripts/weapons.gd")
 const WeaponPose := preload("res://scripts/weapon_pose.gd")
 const WeaponHolder := preload("res://scripts/weapon_holder.gd")
 const LOOPING_ANIMS := ["idle", "run", "crouch_idle", "crouch_walk", "jump", "walk_back",
-		"strafe_left", "strafe_right", "rifle_low", "rifle_aim"]
+		"strafe_left", "strafe_right", "rifle_low", "rifle_aim", "fire"]
 ## Body clips whose arms don't hold the rifle: the upper body comes from
 ## "rifle_low" instead (scripts/weapon_pose.gd)
 const UNARMED_CLIPS := ["run", "jump"]
@@ -96,6 +96,7 @@ var model: Node3D
 var anim: AnimationPlayer
 var aim_mod: SkeletonModifier3D
 var weapon_pose: SkeletonModifier3D
+var _layer_time := 0.0   # clock for looping upper-body clips (aim, fire)
 var muzzle: Node3D
 var flash: MeshInstance3D
 var name_tag: Label3D
@@ -438,19 +439,21 @@ func _animate(delta: float) -> void:
 		anim.play(want, 0.2)
 	anim.speed_scale = rate
 
-	# Upper body: reload > aim/shoot > rifle held low (for clips whose arms
-	# don't hold the rifle) > the body clip itself. Not while dead.
+	# Upper body: reload > shooting (recoil) > aiming > rifle held low (for
+	# clips whose arms don't hold the rifle) > the body clip itself.
+	_layer_time += delta
 	var layer := ""
-	var t := 0.0
+	var t := _layer_time
 	if dead:
 		layer = ""
 	elif reloading:
 		layer = "reload"
 		var clip_len := anim.get_animation("reload").length
 		t = (1.0 - _reload_left / RELOAD_TIME) * clip_len
+	elif _since_fire < 0.25:
+		layer = "fire"
 	elif aiming or _since_fire < FACE_CAMERA_AFTER_FIRE:
 		layer = "rifle_aim"
-		t = 0.3
 	elif want in UNARMED_CLIPS:
 		layer = "rifle_low"
 		t = 0.2

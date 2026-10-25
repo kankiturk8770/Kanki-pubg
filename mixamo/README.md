@@ -55,13 +55,13 @@ python3 tools/meshy/make_team_texture.py assets/characters/skins/male.glb assets
 
 ## انیمیشن‌هایی که هنوز لازمه (دفعهٔ بعد)
 
+✅ گرفته شد: Rifle Idle، Rifle Aiming Idle، Firing Rifle، Death From The Front، Rifle Turn، Throw Grenade (درازکش).
+
 | جستجو کن | برای |
 |---|---|
-| Rifle Idle | ایستادن (الان یه ژست ثابته) |
-| Rifle Aiming Idle | نشونه‌گیری ایستاده |
-| Firing Rifle | شلیک |
 | Rifle Run | دویدن با اسلحه (الان پاهای دویدن معمولی + دست‌های اسلحه) |
 | Rifle Jump | پرش |
+| Toss Grenade | پرتاب نارنجک ایستاده |
 
 ## دانلود خودکار با گوشی (بوکمارک)
 

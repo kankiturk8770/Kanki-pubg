@@ -187,6 +187,7 @@ func _show_character() -> void:
 	var ap: AnimationPlayer = _soldier.find_child("AnimationPlayer", true, false)
 	var skeleton: Skeleton3D = _soldier.find_child("Skeleton3D", true, false)
 	WeaponHolder.new().setup(skeleton, Settings.weapon, ap)
+	ap.get_animation("idle").loop_mode = Animation.LOOP_LINEAR
 	ap.play("idle")
 	if _avatar:
 		_avatar.texture = PORTRAITS[clampi(Settings.character, 0, 1)]
