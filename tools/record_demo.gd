@@ -21,7 +21,6 @@ var _touch: Control
 var _look := Vector2.ZERO   # wanted camera (yaw, pitch); the camera turns to it smoothly
 var _steer := false         # the driver turns the camera
 var _fighting := false
-var _ads_used := false
 var _peeked := false
 var _stuck_left := 0.0
 var _stuck_side := 1.0
@@ -91,7 +90,8 @@ func _init() -> void:
 	quit()
 
 
-## Movement: look around, run, sprint, jump, strafe, back, crouch, aim.
+## Movement: look around, walk, run, sprint (locked), jump, turn and run
+## sideways, crouch, then aim down the sight and peek both ways.
 func _show_moves() -> void:
 	var front := _look.x
 	_look.x = front + 0.6
@@ -99,33 +99,50 @@ func _show_moves() -> void:
 	_look.x = front - 0.5
 	await _wait(1.2)
 	_look.x = front
-	_stick(Vector2(0, -0.75))
-	await _wait(2.2)
-	_stick(Vector2(0, -1))   # all the way forward: sprint
+	_stick(Vector2(0, -0.4))   # a little push: walk
 	await _wait(2.0)
-	await _tap("jump")
-	await _wait(1.2)
-	_stick(Vector2(-0.85, 0))
-	await _wait(1.5)
-	_stick(Vector2(0.85, 0))
-	await _wait(1.5)
-	_stick(Vector2(0, 0.75))
-	await _wait(1.3)
-	_stick(Vector2.ZERO)
-	await _tap("crouch")
-	_stick(Vector2(0, -0.7))
+	_stick(Vector2(0, -0.9))   # run
+	await _wait(1.6)
+	await _sprint_lock()       # push past the ring: sprint, thumb off
 	await _wait(1.8)
-	_stick(Vector2.ZERO)
-	await _wait(0.6)
-	await _tap("crouch")
-	await _wait(0.5)
-	await _tap("aim")
-	_look.x = front + 0.35
+	await _tap("jump")
+	await _wait(1.0)
+	_touch.elements["joystick"].stop_sprint_lock()
+	_stick(Vector2(-0.9, 0))
 	await _wait(1.3)
+	_stick(Vector2(0.9, 0))
+	await _wait(1.3)
+	_stick(Vector2.ZERO)
+	await _tap("crouch")
+	_stick(Vector2(0, -0.8))
+	await _wait(1.6)
+	_stick(Vector2.ZERO)
+	await _wait(0.5)
+	await _tap("crouch")
+	await _wait(0.4)
+	await _tap("aim")
+	_look.x = front + 0.3
+	await _wait(1.2)
+	await _tap("peek_right")
+	await _wait(1.2)
+	await _tap("peek_left")
+	await _wait(1.2)
+	await _tap("peek_left")
 	_look.x = front
 	await _wait(0.8)
 	await _tap("aim")
 	await _wait(0.4)
+
+
+func _sprint_lock() -> void:
+	var e = _touch.elements["joystick"]
+	_mark(e.center + Vector2(0, -e.diameter * 0.6))
+	e.pressed = true
+	e.knob = Vector2(0, -1)
+	e.sprint_lock = true
+	e.queue_redraw()
+	await _wait(0.3)
+	e.touch_up()
 
 
 ## Every frame: turn the camera smoothly; in the fight, play like a person.
@@ -171,9 +188,8 @@ func _fight(dt: float) -> void:
 		var to := at - cam
 		_look = Vector2(atan2(-to.x, -to.z), atan2(to.y, Vector2(to.x, to.z).length()))
 		var dist := Vector2(to.x, to.z).length()
-		# Scope in for far targets (first fights), peek once, step sideways
-		if dist > 9.0 and not _me.aiming and not _ads_used:
-			_ads_used = true
+		# Look through the sight unless the enemy is close, peek once, step sideways
+		if dist > 6.0 and not _me.aiming:
 			_tap("aim")
 		if _me.aiming and not _peeked and _me.ammo < 22:
 			_peeked = true
@@ -186,7 +202,6 @@ func _fight(dt: float) -> void:
 		_hold_fire(false)
 		if _me.aiming:
 			_tap("aim")
-			_ads_used = false
 		if _me.ammo < 18 and not _me.reloading:
 			_tap("reload")
 		if nearest:
@@ -206,6 +221,8 @@ func _fight(dt: float) -> void:
 
 func _stick(v: Vector2) -> void:
 	var e = _touch.elements["joystick"]
+	if e.sprint_lock:
+		return
 	e.pressed = v != Vector2.ZERO
 	if e.knob != v:
 		e.knob = v

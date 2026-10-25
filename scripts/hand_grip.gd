@@ -169,7 +169,7 @@ func _left_hand_to_gun(skeleton: Skeleton3D) -> void:
 	# like WeaponHolder does, then brought into the skeleton's space
 	var to_world := skeleton.global_transform if skeleton.is_inside_tree() else Transform3D()
 	var right := (to_world * skeleton.get_bone_global_pose(_right_hand)).orthonormalized()
-	var want: Transform3D = to_world.affine_inverse() * (right * _holder.in_hand * _left_in_gun)
+	var want: Transform3D = to_world.affine_inverse() * (_holder.gun_transform(right) * _left_in_gun)
 
 	var arm := skeleton.get_bone_global_pose(_arm)
 	var forearm := skeleton.get_bone_global_pose(_forearm)

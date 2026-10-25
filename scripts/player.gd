@@ -23,6 +23,9 @@ const LOOPING_ANIMS := ["idle", "run", "crouch_idle", "crouch_walk", "jump", "wa
 const UNARMED_CLIPS := ["run", "jump"]
 
 const WALK_SPEED := 5.0     # normal run (joystick fully pushed)
+const SLOW_SPEED := 2.2     # walking (joystick pushed a little, like PUBG)
+const SLOW_PUSH := 0.6      # joystick push below this walks
+const WALK_CLIP_SPEED := 1.4   # "rifle_low" (Walk With Rifle) covers this much a second
 const SPRINT_SPEED := 6.4
 const ADS_SPEED := 3.0
 const CROUCH_SPEED := 2.4
@@ -38,12 +41,19 @@ const MAG_SIZE := 30
 const RELOAD_TIME := 2.1
 const RANGE := 150.0
 
-const HIP_FOV := 75.0
-const ARM_LENGTH := 2.6
-const ADS_ARM_LENGTH := 1.1
+## Third person camera, like PUBG Mobile: close behind the right shoulder
+const HIP_FOV := 80.0
+const ARM_LENGTH := 1.75
+const SHOULDER := 0.5
+const EYE_HEIGHT := 1.72
+const CROUCH_EYE_HEIGHT := 1.25
+## Aiming: the camera moves to the red dot sight (first person) this fast
+const ADS_TIME := 0.16
 ## Camera field of view when aiming with each scope.
-const SCOPE_FOV := {"red_dot": 50.0, "2x": 36.0, "3x": 26.0, "4x": 19.0, "6x": 13.0, "8x": 9.5}
-const PEEK_ANGLE := 0.32     # how far the upper body leans (radians)
+const SCOPE_FOV := {"red_dot": 58.0, "2x": 36.0, "3x": 26.0, "4x": 19.0, "6x": 13.0, "8x": 9.5}
+const PEEK_ANGLE := 0.4      # how far the upper body leans (radians)
+const PEEK_SHIFT := 0.5      # how far the camera moves to the peek side
+const PEEK_TILT := 0.1       # camera roll while peeking
 ## Body keeps facing the camera this long after the last shot.
 const FACE_CAMERA_AFTER_FIRE := 0.8
 
@@ -115,7 +125,11 @@ var name_tag: Label3D
 var shot_audio: AudioStreamPlayer3D
 var cam_pivot: Node3D
 var spring: SpringArm3D
-var camera: Camera3D
+var _tpp_spot: Node3D      # end of the spring arm: the third person camera's place
+var camera: Camera3D       # what we look through: third person, or the sight when aiming
+var holder: Node3D         # the gun (scripts/weapon_holder.gd)
+var _ads := 0.0            # 0 third person .. 1 looking through the sight
+var _near_fade := false
 
 
 ## Called by the spawner before the node enters the scene tree.
@@ -187,7 +201,7 @@ func _build_body() -> void:
 	weapon_pose.influence = 0.0
 	aim_mod = AimModifier.new()
 	skeleton.add_child(aim_mod)
-	var holder := WeaponHolder.new()
+	holder = WeaponHolder.new()
 	holder.setup(skeleton, weapon, anim)
 	# Fingers round the gun, left hand on the handguard (last modifier)
 	hand_grip = HandGrip.new()
@@ -245,10 +259,10 @@ func _build_sync() -> void:
 
 func _build_camera() -> void:
 	cam_pivot = Node3D.new()
-	cam_pivot.position = Vector3(0, 1.6, 0)
+	cam_pivot.position = Vector3(0, EYE_HEIGHT, 0)
 	add_child(cam_pivot)
 	spring = SpringArm3D.new()
-	spring.position = Vector3(0.55, 0, 0)  # over the right shoulder
+	spring.position = Vector3(SHOULDER, 0, 0)  # over the right shoulder
 	spring.spring_length = ARM_LENGTH
 	spring.collision_mask = 1
 	spring.margin = 0.2
@@ -258,9 +272,14 @@ func _build_camera() -> void:
 	spring.add_excluded_object(get_rid())
 	cam_pivot.add_child(spring)
 	camera = Camera3D.new()
+	_tpp_spot = Node3D.new()
+	spring.add_child(_tpp_spot)
 	camera.fov = HIP_FOV
-	camera.near = 0.05
-	spring.add_child(camera)
+	camera.near = 0.03
+	camera.top_level = true
+	add_child(camera)
+	# The view is placed once the skeleton (and the gun on it) has moved
+	model.find_child("Skeleton3D", true, false).skeleton_updated.connect(_update_view)
 
 
 # ---------------------------------------------------------------- update
@@ -335,7 +354,11 @@ func _owner_update(delta: float) -> void:
 		speed = CROUCH_SPEED
 	elif aiming or peek != 0:
 		speed = ADS_SPEED
-	var target := dir * speed
+	# A little push walks, more runs (like PUBG's joystick)
+	var push := input.length()
+	if push < SLOW_PUSH and not sprinting:
+		speed = minf(speed, SLOW_SPEED) * push / SLOW_PUSH
+	var target := dir.normalized() * speed if push > 0.05 else Vector3.ZERO
 	var rate := AIR_ACCEL if not is_on_floor() else (ACCEL if target.length() > 0.1 else DECEL)
 	var horizontal := Vector2(velocity.x, velocity.z).move_toward(Vector2(target.x, target.z), rate * delta)
 	velocity.x = horizontal.x
@@ -360,7 +383,7 @@ func _owner_update(delta: float) -> void:
 		body_target = rotation.y
 	elif dir.length() > 0.1:
 		body_target = atan2(-dir.x, -dir.z)
-	var turn_speed := 18.0 if face_camera else 9.0
+	var turn_speed := 18.0 if face_camera else 11.0
 	body_yaw = lerp_angle(body_yaw, body_target, 1.0 - exp(-turn_speed * delta))
 
 	# Shooting
@@ -381,20 +404,54 @@ func _owner_update(delta: float) -> void:
 		else:
 			start_reload()
 
-	# Camera: over the shoulder, closer when aiming, moves out when peeking
+	# Camera: over the right shoulder; peeking moves it out to that side
+	# and tilts it; aiming moves it into the sight (see _update_view)
 	var t := 1.0 - exp(-12.0 * delta)
 	cam_pivot.rotation.x = pitch
-	cam_pivot.position.y = lerpf(cam_pivot.position.y, 1.15 if crouching else 1.6, t)
-	cam_pivot.rotation.z = lerpf(cam_pivot.rotation.z, -peek * 0.06, t)
-	var side := 0.55 + peek * 0.4
-	spring.spring_length = lerpf(spring.spring_length, ADS_ARM_LENGTH if aiming else ARM_LENGTH, t)
-	spring.position.x = lerpf(spring.position.x, side - (0.1 if aiming else 0.0), t)
-	camera.fov = lerpf(camera.fov, SCOPE_FOV.get(scope, 50.0) if aiming else HIP_FOV, t)
+	cam_pivot.position.y = lerpf(cam_pivot.position.y, CROUCH_EYE_HEIGHT if crouching else EYE_HEIGHT, t)
+	cam_pivot.rotation.z = lerpf(cam_pivot.rotation.z, -peek * PEEK_TILT, t)
+	spring.position.x = lerpf(spring.position.x, SHOULDER + peek * PEEK_SHIFT, t)
+	_ads = move_toward(_ads, 1.0 if aiming and not dead else 0.0, delta / ADS_TIME)
+	holder.ads = smoothstep(0.0, 1.0, _ads)
+	var view := _look_basis()
+	holder.aim_basis = Basis(view.z, view.y, -view.x)   # gun: muzzle -X along the look
 
 	net_position = global_position
 	net_yaw = rotation.y
 	net_pitch = pitch
 	net_body_yaw = body_yaw
+
+
+## Where the player looks (with the peek tilt), as a camera basis.
+func _look_basis() -> Basis:
+	return Basis(Vector3.UP, rotation.y) * Basis(Vector3.RIGHT, pitch) * Basis(Vector3.BACK, cam_pivot.rotation.z)
+
+
+## Puts the camera behind the shoulder, or in the red dot sight when
+## aiming (in between while switching, like PUBG's quick zoom).
+func _update_view() -> void:
+	if camera == null or not is_inside_tree():
+		return
+	var e: float = holder.ads
+	var view := _tpp_spot.global_transform
+	if e > 0.0:
+		var sight := Transform3D(_look_basis(), holder.global_transform * holder.eye_point)
+		view = view.interpolate_with(sight, e)
+	camera.global_transform = view
+	camera.fov = lerpf(HIP_FOV, SCOPE_FOV.get(scope, 58.0), e)
+	# Our own head and shoulders right at the lens fade away (sight view,
+	# or the camera pushed in against a wall)
+	var near := e > 0.4 or spring.get_hit_length() < 0.7
+	if near != _near_fade and is_local:
+		_near_fade = near
+		for mi in model.find_children("*", "MeshInstance3D", true, false):
+			for i in mi.mesh.get_surface_count():
+				var mat := mi.get_surface_override_material(i) as StandardMaterial3D
+				if mat:
+					mat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_DITHER if near \
+							else BaseMaterial3D.DISTANCE_FADE_DISABLED
+					mat.distance_fade_min_distance = 0.22
+					mat.distance_fade_max_distance = 0.4
 
 
 func _remote_update(delta: float) -> void:
@@ -451,7 +508,10 @@ func _animate(delta: float) -> void:
 		if speed > 0.4 and ahead < -0.3:
 			rate = -rate
 	elif speed > 0.4:
-		if ahead > 0.5:
+		if ahead > 0.5 and speed < 3.2:
+			want = "rifle_low"   # walking, rifle ready
+			rate = clampf(speed / WALK_CLIP_SPEED, 0.5, 2.2)
+		elif ahead > 0.5:
 			want = "run"
 			rate = clampf(speed / 4.7, 0.5, 1.6)   # Run_Forward covers 4.7 m/s
 		elif ahead < -0.5:

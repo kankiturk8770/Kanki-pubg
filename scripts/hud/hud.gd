@@ -114,7 +114,7 @@ func _build_top_bar() -> void:
 	_kill_feed = VBoxContainer.new()
 	_kill_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_kill_feed.alignment = BoxContainer.ALIGNMENT_BEGIN
-	_anchor(_kill_feed, 1, 0, Rect2(-430, 10, 420, 200))
+	_anchor(_kill_feed, 0, 0, Rect2(16, 92, 420, 170))   # top left, like PUBG (fire button is top right)
 	_root.add_child(_kill_feed)
 
 
@@ -245,7 +245,7 @@ func add_kill(killer: String, killer_team: int, victim: String, victim_team: int
 	line.add_theme_font_size_override("normal_font_size", 20)
 	line.add_theme_constant_override("outline_size", 4)
 	line.add_theme_color_override("font_outline_color", Color.BLACK)
-	line.text = "[right][color=#%s]%s[/color]  %s  [color=#%s]%s[/color][/right]" % [
+	line.text = "[color=#%s]%s[/color]  %s  [color=#%s]%s[/color]" % [
 		UI.TEAM_COLORS[killer_team].lightened(0.2).to_html(false), _escape(killer),
 		"[color=#ff5555]HEADSHOT[/color]" if head_hit else "killed",
 		UI.TEAM_COLORS[victim_team].lightened(0.2).to_html(false), _escape(victim)]
