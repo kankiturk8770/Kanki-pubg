@@ -62,3 +62,17 @@ python3 tools/meshy/make_team_texture.py assets/characters/skins/male.glb assets
 | Firing Rifle | شلیک |
 | Rifle Run | دویدن با اسلحه (الان پاهای دویدن معمولی + دست‌های اسلحه) |
 | Rifle Jump | پرش |
+
+## دانلود خودکار با گوشی (بوکمارک)
+
+`bookmarklet.txt` = نسخهٔ کوچیک‌شدهٔ `tools/mixamo/mixamo_download.js`
+(بر پایهٔ اسکریپت DownloadMixamo از Jake Cattrall). فقط انیمیشن‌های لیست `WANTED`
+توی همون فایل رو دانلود می‌کنه، بسته‌ها و بقیه رو رد می‌کنه، و پیشرفت رو توی یه کادر زرد بالای صفحه نشون می‌ده.
+
+1. محتوای `bookmarklet.txt` رو کامل کپی کن (Select all ← Copy).
+2. کروم: یه صفحه رو بوکمارک کن (⋮ ← ☆). بعد ⋮ ← Bookmarks ← روی همون بوکمارک انگشت نگه دار ← **Edit**:
+   - Name: `kanki` · URL: متن کپی‌شده رو جایگزین کن ← ذخیره.
+3. `mixamo.com` (Desktop site) ← تب **Animations** ← بالای صفحه باید **MALE_UPLOAD** باشه ← جستجو خالی.
+4. روی نوار آدرس بزن، بنویس `kanki` و **پیشنهادی که ستاره (بوکمارک) داره** رو بزن.
+5. کادر زرد میاد. اگه کروم پرسید «چند فایل دانلود بشه؟» ← **Allow**. صفحه رو روشن نگه دار تا تموم بشه (STOP برای توقف).
+6. فایل‌های دانلودشده رو بفرست.
